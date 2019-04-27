@@ -3,24 +3,34 @@ import java.util.Arrays;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
     private EnhancedDatagramSocket socket;
- 
+    private int SequenceNum = 300;
+    private String destIp;
+    private int destPort;
 
     public TCPServerSocketImpl(int port) throws Exception {
         // the port in which packets are expected to receive
         super(port);
         this.socket = new EnhancedDatagramSocket(port);
+    }
 
+    @Override
+    public TCPSocket accept() throws Exception {
         byte buf[] = new byte[2];
         DatagramPacket dp = new DatagramPacket(buf, 2);
 
-        socket.receive(dp);
+        while (true) {
+            socket.receive(dp);
+            TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
+            if (dpParser.isAckPacket() && dpParser.isSynPacket())
+                break;
+        }
 
-        System.out.println(dp.getData()[0]);
-        // byte[] buffAck = { 17 };
-        // DatagramPacket dpAck = new DatagramPacket(buffAck, 1, dp.getAddress(),
-        // dp.getPort());
-        // socket.send(dpAck);
-        TCPHeaderGenerator synAckPacket = new TCPHeaderGenerator(dp.getAddress().getHostAddress(), dp.getPort());
+        System.out.println(dp.getData());
+
+        String hostAddress = dp.getAddress().getHostAddress();
+        int hostPort = dp.getPort();
+
+        TCPHeaderGenerator synAckPacket = new TCPHeaderGenerator(hostAddress, hostPort);
         synAckPacket.setSynFlag();
         synAckPacket.setAckFlag();
         // TODO: set sequence number
@@ -30,21 +40,17 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
         byte ackBuf[] = new byte[2];
         DatagramPacket ackPacket = new DatagramPacket(ackBuf, 2);
-        socket.receive(ackPacket);
+        while (true) {
+            socket.receive(ackPacket);
+            TCPHeaderParser ackPacketParser = new TCPHeaderParser(ackPacket.getData());
+            if (ackPacketParser.isAckPacket() && ackPacketParser.isSynPacket())
+                break;
+        }
 
         System.out.println("Est");
-
-    }
-
-    @Override
-    // public TCPSocket accept() throws Exception {
-    public TCPSocket accept() throws Exception {
-        // if got an ack, accept and do handshake
-        // else, wait!
-        if (false) {
-            throw new RuntimeException("Not implemented!");
-        }
-        return new TCPSocketImpl("127.0.0.1", 2134);
+        TCPSocketImpl tcpSocket = new TCPSocketImpl();
+        tcpSocket.init(socket, hostAddress, hostPort);
+        return tcpSocket;
     }
 
     @Override
