@@ -9,7 +9,7 @@ import java.nio.ByteBuffer;
 
 public class TCPHeaderGenerator {
     private int MINIMUM_HEADER_SIZE = 40;
-    private int SEQ_SIZE = 2;
+    private int SEQ_NUM_SIZE = 2;
 
     private byte buffer[];
     private int port;
@@ -17,7 +17,7 @@ public class TCPHeaderGenerator {
 
     // [0] | [1] | [2] | [3] | [4] | [5] | [6]:ACK | [7]:SYN
     public int flagIndex = 0;
-    public int seqIndex = 1;
+    public int seqNumIndex = 1;
 
     public TCPHeaderGenerator(String _ip, int _port) {
         this.port = _port;
@@ -25,16 +25,24 @@ public class TCPHeaderGenerator {
         this.buffer = new byte[MINIMUM_HEADER_SIZE];
         buffer[flagIndex] = 0x00;
     }
-
     public void setSequenceNumber(short seqNumber) {        
-        ByteBuffer dbuf = ByteBuffer.allocate(SEQ_SIZE);
+        ByteBuffer dbuf = ByteBuffer.allocate(SEQ_NUM_SIZE);
         dbuf.putShort(seqNumber);
         byte[] bytes = dbuf.array(); // { 0, 1 }
 
-        for (int i = 0; i < SEQ_SIZE; i++)
+        for (int i = 0; i < SEQ_NUM_SIZE; i++)
             buffer[seqNumber + i] = bytes[i];
     }
 
+    public void setAckNumber(short seqNumber) {        
+        ByteBuffer dbuf = ByteBuffer.allocate(SEQ_NUM_SIZE);
+        dbuf.putShort(seqNumber);
+        byte[] bytes = dbuf.array(); // { 0, 1 }
+
+        for (int i = 0; i < SEQ_NUM_SIZE; i++)
+            buffer[seqNumber + i] = bytes[i];
+    }
+    
     public void setSynFlag() {
         byte setSyn = 0x01;
         buffer[flagIndex] = (byte)(buffer[flagIndex] | setSyn);
