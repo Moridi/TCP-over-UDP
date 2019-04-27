@@ -3,7 +3,7 @@ import java.util.Arrays;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
     private EnhancedDatagramSocket socket;
-    private int SequenceNum = 300;
+    private short SequenceNum = 300;
     private String destIp;
     private int destPort;
 
@@ -56,7 +56,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
         System.out.println("Est");
         TCPSocketImpl tcpSocket = new TCPSocketImpl();
-        tcpSocket.init(socket, hostAddress, hostPort);
+        tcpSocket.init(socket, hostAddress, hostPort, this.SequenceNum, recvSeqNumber);
         return tcpSocket;
     }
 
