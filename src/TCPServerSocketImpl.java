@@ -3,7 +3,7 @@ import java.util.Arrays;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
     private EnhancedDatagramSocket socket;
-    private int SequenceNum = 300;
+    private short SequenceNum = 300;
     private String destIp;
     private int destPort;
 
@@ -28,11 +28,10 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         return dp;
     }
 
-    public TCPHeaderGenerator setupSynAckPacket(DatagramPacket dp) throws Exception {
+    public TCPHeaderGenerator setupSynAckPacket(DatagramPacket dp,
+            short recvSeqNumber) throws Exception {
 
         TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
-
-        short recvSeqNumber = dpParser.getSequenceNumber(); 
 
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
@@ -62,33 +61,38 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         }
     }
 
-    public TCPSocketImpl createTcpSocket(DatagramPacket dp) {
+    public TCPSocketImpl createTcpSocket(DatagramPacket dp, short recvSeqNumber) {
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
 
         System.out.println("Est");
         TCPSocketImpl tcpSocket = new TCPSocketImpl();
-        tcpSocket.init(socket, hostAddress, hostPort);
-
+        tcpSocket.init(socket, hostAddress, hostPort, this.SequenceNum, recvSeqNumber);
         return tcpSocket;
     } 
-    
+
+    public short getRecvSeqNumber(DatagramPacket dp) {
+        TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
+        short recvSeqNumber = dpParser.getSequenceNumber(); 
+        return recvSeqNumber;
+    }
+
     @Override
     public TCPSocket accept() throws Exception {
 
         // Receive Syn Packet
         DatagramPacket dp = getSynPacket();
+        short recvSeqNumber = getRecvSeqNumber(dp);
 
         // Send Syn/Ack Packet
-        TCPHeaderGenerator synAckPacket = setupSynAckPacket(dp);
+        TCPHeaderGenerator synAckPacket = setupSynAckPacket(dp, recvSeqNumber);
         this.socket.send(synAckPacket.getPacket());
-
         System.out.println("Sent");
 
         // Receive Ack packet
         getAckPacket();
 
-        return createTcpSocket(dp);
+        return createTcpSocket(dp, recvSeqNumber);
     }
 
     @Override
