@@ -3,19 +3,37 @@ import java.util.Arrays;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
     private EnhancedDatagramSocket socket;
+ 
 
     public TCPServerSocketImpl(int port) throws Exception {
         // the port in which packets are expected to receive
         super(port);
         this.socket = new EnhancedDatagramSocket(port);
 
-
         byte buf[] = new byte[2];
         DatagramPacket dp = new DatagramPacket(buf, 2);
 
         socket.receive(dp);
 
-        System.out.println(Arrays.toString(dp.getData()));
+        System.out.println(dp.getData()[0]);
+        // byte[] buffAck = { 17 };
+        // DatagramPacket dpAck = new DatagramPacket(buffAck, 1, dp.getAddress(),
+        // dp.getPort());
+        // socket.send(dpAck);
+        TCPHeaderGenerator synAckPacket = new TCPHeaderGenerator(dp.getAddress().getHostAddress(), dp.getPort());
+        synAckPacket.setSynFlag();
+        synAckPacket.setAckFlag();
+        // TODO: set sequence number
+        this.socket.send(synAckPacket.getPacket());
+
+        System.out.println("Sent");
+
+        byte ackBuf[] = new byte[2];
+        DatagramPacket ackPacket = new DatagramPacket(ackBuf, 2);
+        socket.receive(ackPacket);
+
+        System.out.println("Est");
+
     }
 
     @Override
