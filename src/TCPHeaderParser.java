@@ -15,4 +15,10 @@ public class TCPHeaderParser {
             return true;
         return false;
     }
+
+    public boolean isAckPacket() {
+        if ((buffer[flagIndex] & 0x02) == 0x01)
+            return true;
+        return false;
+    }
 } 
