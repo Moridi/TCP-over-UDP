@@ -31,7 +31,8 @@ public class TCPHeaderGenerator {
         byte[] bytes = dbuf.array(); // { 0, 1 }
 
         for (int i = 0; i < SEQ_NUM_SIZE; i++)
-            buffer[seqNumber + i] = bytes[i];
+            buffer[seqNumIndex + i] = bytes[i];
+
     }
 
     public void setAckNumber(short seqNumber) {        

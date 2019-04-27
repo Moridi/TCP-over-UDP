@@ -15,35 +15,36 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
     @Override
     public TCPSocket accept() throws Exception {
-        byte buf[] = new byte[2];
-        DatagramPacket dp = new DatagramPacket(buf, 2);
+        byte buf[] = new byte[20];
+        DatagramPacket dp = new DatagramPacket(buf, 20);
 
+        TCPHeaderParser dpParser;
         while (true) {
             socket.receive(dp);
-            TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
-            if (dpParser.isAckPacket() && dpParser.isSynPacket())
+            dpParser = new TCPHeaderParser(dp.getData());
+            if (dpParser.isSynPacket())
                 break;
         }
 
-        System.out.println(dp.getData());
-
+        // TODO: save sender seq num
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
 
         TCPHeaderGenerator synAckPacket = new TCPHeaderGenerator(hostAddress, hostPort);
         synAckPacket.setSynFlag();
         synAckPacket.setAckFlag();
-        // TODO: set sequence number
+        synAckPacket.setSequenceNumber((short)this.SequenceNum);
         this.socket.send(synAckPacket.getPacket());
 
         System.out.println("Sent");
 
-        byte ackBuf[] = new byte[2];
-        DatagramPacket ackPacket = new DatagramPacket(ackBuf, 2);
+        byte ackBuf[] = new byte[20];
+        DatagramPacket ackPacket = new DatagramPacket(ackBuf, 20);
         while (true) {
             socket.receive(ackPacket);
             TCPHeaderParser ackPacketParser = new TCPHeaderParser(ackPacket.getData());
-            if (ackPacketParser.isAckPacket() && ackPacketParser.isSynPacket())
+            System.out.println(Arrays.toString(ackPacket.getData()));
+            if (ackPacketParser.isAckPacket())
                 break;
         }
 

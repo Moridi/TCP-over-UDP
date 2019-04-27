@@ -4,7 +4,7 @@ import java.net.InetAddress;
 public class TCPSocketImpl extends TCPSocket {
     static final int senderPort = 9090;
     private EnhancedDatagramSocket socket;
-    private int SequenceNum = 100;
+    private short SequenceNum = 1000;
     private String destIp;
     private int destPort;
 
@@ -23,7 +23,7 @@ public class TCPSocketImpl extends TCPSocket {
 
         TCPHeaderGenerator synPacket = new TCPHeaderGenerator(ip, port);
         synPacket.setSynFlag();
-        //TODO: set sequence number
+        synPacket.setSequenceNumber((short)this.SequenceNum);
         this.socket.send(synPacket.getPacket());
 
         System.out.println("Sent Syn");
@@ -42,11 +42,11 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println(dpAck.getData()[0]);
         
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(ip, port);
-        synPacket.setAckFlag();
+        ackPacket.setAckFlag();
         //TODO: set sequence number
         //TODO: set Ack number
         this.socket.send(ackPacket.getPacket());
-        
+
         System.out.println("Sent");
         System.out.println("Est");
 
