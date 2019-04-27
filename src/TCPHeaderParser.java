@@ -29,7 +29,6 @@ public class TCPHeaderParser {
         return false;
     }
 
-
     public short getSequenceNumber() {
         byte[] arr = new byte[SEQ_NUM_SIZE];
 
@@ -37,7 +36,19 @@ public class TCPHeaderParser {
             arr[i] = buffer[i + seqNumIndex];
 
         ByteBuffer wrapped = ByteBuffer.wrap(arr); // big-endian by default
-        short num = wrapped.getShort(); // 1
+        short num = wrapped.getShort();
+
+        return num;
+    }
+
+    public short getAckNumber() {
+        byte[] arr = new byte[ACK_NUM_SIZE];
+
+        for (int i = 0; i < ACK_NUM_SIZE; ++i)
+            arr[i] = buffer[i + ackNumIndex];
+
+        ByteBuffer wrapped = ByteBuffer.wrap(arr); // big-endian by default
+        short num = wrapped.getShort();
 
         return num;
     }
