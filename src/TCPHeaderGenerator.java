@@ -25,6 +25,21 @@ public class TCPHeaderGenerator {
         buffer[flagIndex] = (byte)(buffer[flagIndex] | setSyn);
     }
 
+    public void resetSynFlag() {
+        byte resetSyn = (byte)(0xFE);
+        buffer[flagIndex] = (byte)(buffer[flagIndex] & resetSyn);
+    }
+
+    public void setAckFlag() {
+        byte setAck = 0x02;
+        buffer[flagIndex] = (byte)(buffer[flagIndex] | setAck);
+    }
+
+    public void resetAckFlag() {
+        byte resetAck = (byte)(0xFD);
+        buffer[flagIndex] = (byte)(buffer[flagIndex] | resetAck);
+    }
+
     public DatagramPacket getPacket() throws Exception {
         InetAddress address = InetAddress.getByName(ip);
         return new DatagramPacket(buffer, buffer.length, address, port);
