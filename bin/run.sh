@@ -1,1 +1,1 @@
-javac ../src/*.java
+javac -d . ../src/*.java
