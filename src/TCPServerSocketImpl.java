@@ -15,6 +15,8 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
     @Override
     public TCPSocket accept() throws Exception {
+        short recvSeqNumber;
+
         byte buf[] = new byte[20];
         DatagramPacket dp = new DatagramPacket(buf, 20);
 
@@ -27,6 +29,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         }
 
         // TODO: save sender seq num
+        recvSeqNumber = dpParser.getSequenceNumber(); 
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
 
@@ -34,6 +37,8 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         synAckPacket.setSynFlag();
         synAckPacket.setAckFlag();
         synAckPacket.setSequenceNumber((short)this.SequenceNum);
+        // TODO: decide to whether user +1 or +palyload_size for AckNumber
+        synAckPacket.setAckNumber((short)(recvSeqNumber + 1));
         this.socket.send(synAckPacket.getPacket());
 
         System.out.println("Sent");
@@ -44,7 +49,8 @@ public class TCPServerSocketImpl extends TCPServerSocket {
             socket.receive(ackPacket);
             TCPHeaderParser ackPacketParser = new TCPHeaderParser(ackPacket.getData());
             System.out.println(Arrays.toString(ackPacket.getData()));
-            if (ackPacketParser.isAckPacket())
+            if (ackPacketParser.isAckPacket() 
+                    && (ackPacketParser.getAckNumber() == this.SequenceNum + 1))
                 break;
         }
 

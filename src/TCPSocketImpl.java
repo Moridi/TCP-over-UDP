@@ -17,8 +17,10 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public TCPSocketImpl(String ip, int port) throws Exception {
-        // destination's ip and port
         super(ip, port);
+
+        short recvSeqNum;
+        // destination's ip and port
         this.socket = new EnhancedDatagramSocket(senderPort);
 
         TCPHeaderGenerator synPacket = new TCPHeaderGenerator(ip, port);
@@ -29,22 +31,26 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("Sent Syn");
 
 
-        byte bufAck[] = new byte[2];
-        DatagramPacket dpAck = new DatagramPacket(bufAck, 2);
+        byte bufAck[] = new byte[20];
+        DatagramPacket dpAck = new DatagramPacket(bufAck, 20);
 
+        TCPHeaderParser ackPacketParser;
         while (true) {
             socket.receive(dpAck);
-            TCPHeaderParser ackPacketParser = new TCPHeaderParser(dpAck.getData());
-            if (ackPacketParser.isAckPacket() && ackPacketParser.isSynPacket())
+            ackPacketParser = new TCPHeaderParser(dpAck.getData());
+            if (ackPacketParser.isAckPacket() 
+                    && ackPacketParser.isSynPacket() 
+                    && ackPacketParser.getAckNumber() == this.SequenceNum + 1)
                 break;
         }
 
+        recvSeqNum = ackPacketParser.getSequenceNumber();
         System.out.println(dpAck.getData()[0]);
         
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(ip, port);
         ackPacket.setAckFlag();
-        //TODO: set sequence number
-        //TODO: set Ack number
+        // TODO: decide to whether user +1 or +palyload_size for AckNumber
+        ackPacket.setAckNumber((short)(recvSeqNum + 1));
         this.socket.send(ackPacket.getPacket());
 
         System.out.println("Sent");
