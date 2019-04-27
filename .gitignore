@@ -29,3 +29,5 @@ TCP-over-UDP/.project
 TCP-over-UDP/.settings/
 docs/
 images/
+
+bin/
