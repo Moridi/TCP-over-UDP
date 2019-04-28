@@ -20,9 +20,7 @@ public class TCPSocketImpl extends TCPSocket {
         this.anotherSideSequenceNum = anotherSideSeqNum;
     }
 
-    public TCPSocketImpl(String ip, int port) throws Exception {
-        super(ip, port);
-
+    public void sendSynPacket(String ip, int port) throws Exception {
         // destination's ip and port
         this.socket = new EnhancedDatagramSocket(senderPort);
 
@@ -32,8 +30,10 @@ public class TCPSocketImpl extends TCPSocket {
         this.socket.send(synPacket.getPacket());
 
         System.out.println("Sent Syn");
+    }
 
-
+    
+    public void getSynAckPacket() throws Exception {
         byte bufAck[] = new byte[20];
         DatagramPacket dpAck = new DatagramPacket(bufAck, 20);
 
@@ -49,7 +49,9 @@ public class TCPSocketImpl extends TCPSocket {
 
         this.anotherSideSequenceNum = ackPacketParser.getSequenceNumber();
         System.out.println(dpAck.getData()[0]);
-        
+    }
+
+    public void sendAckPacket(String ip, int port) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(ip, port);
         ackPacket.setAckFlag();
         // TODO: decide to whether user +1 or +palyload_size for AckNumber
@@ -58,9 +60,16 @@ public class TCPSocketImpl extends TCPSocket {
 
         System.out.println("Sent");
         System.out.println("Est");
+    }
 
+    public TCPSocketImpl(String ip, int port) throws Exception {
+        super(ip, port);
         this.destPort = port;
         this.destIp = ip;
+
+        sendSynPacket(ip, port);
+        getSynAckPacket();
+        sendAckPacket(ip, port);
     }
 
     @Override
