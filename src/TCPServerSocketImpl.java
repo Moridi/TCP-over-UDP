@@ -2,15 +2,35 @@ import java.net.DatagramPacket;
 import java.util.Arrays;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
+    static final short FIRST_SEQUENCE = 200;
+    
     private EnhancedDatagramSocket socket;
-    private short SequenceNum = 300;
+    private short sequenceNumber;
+    private short ackNumber;
     private String destIp;
     private int destPort;
 
     public TCPServerSocketImpl(int port) throws Exception {
-        // the port in which packets are expected to receive
         super(port);
         this.socket = new EnhancedDatagramSocket(port);
+        this.sequenceNumber = FIRST_SEQUENCE;
+    }
+
+    public void getPacketLog(String type, DatagramPacket dp,
+            short sequenceNumber, short ackNumber) {
+        System.out.println("$$$$$$ " + type + " packet received $$$$$");
+        System.out.print("Sequence number: ");
+        System.out.println(sequenceNumber);
+        System.out.print("Ack number: ");
+        System.out.println(ackNumber);
+        System.out.println("###\n");
+    }
+
+    public void sendPacketLog(String type, DatagramPacket sendingPacket) {
+        System.out.println("$$$$$$ " + type + " packet sent $$$$$");
+        System.out.println("To: " + sendingPacket.getAddress() + 
+                " : " + Integer.toString(sendingPacket.getPort()));
+        System.out.println("###\n");
     }
 
     public DatagramPacket getSynPacket() throws Exception {
@@ -25,11 +45,15 @@ public class TCPServerSocketImpl extends TCPServerSocket {
                 break;
         }
 
+        this.ackNumber = dpParser.getSequenceNumber();
+        this.ackNumber += 1;
+
+        getPacketLog("Syn", dp, dpParser.getSequenceNumber(), dpParser.getAckNumber());
+
         return dp;
     }
 
-    public TCPHeaderGenerator setupSynAckPacket(DatagramPacket dp,
-            short recvSeqNumber) throws Exception {
+    public TCPHeaderGenerator setupSynAckPacket(DatagramPacket dp) throws Exception {
 
         TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
 
@@ -39,10 +63,10 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         TCPHeaderGenerator synAckPacket = new TCPHeaderGenerator(hostAddress, hostPort);
         synAckPacket.setSynFlag();
         synAckPacket.setAckFlag();
-        synAckPacket.setSequenceNumber((short)this.SequenceNum);
+        synAckPacket.setSequenceNumber(this.sequenceNumber);
+        synAckPacket.setAckNumber(this.ackNumber);
 
-        // TODO: decide to whether user +1 or +palyload_size for AckNumber
-        synAckPacket.setAckNumber((short)(recvSeqNumber + 1));
+        this.sequenceNumber += 1;
 
         return synAckPacket;
     }
@@ -51,48 +75,56 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
         byte ackBuf[] = new byte[20];
         DatagramPacket ackPacket = new DatagramPacket(ackBuf, 20);
+        TCPHeaderParser ackPacketParser;
+        
         while (true) {
             socket.receive(ackPacket);
-            TCPHeaderParser ackPacketParser = new TCPHeaderParser(ackPacket.getData());
-            System.out.println(Arrays.toString(ackPacket.getData()));
+            ackPacketParser = new TCPHeaderParser(ackPacket.getData());
+          
             if (ackPacketParser.isAckPacket() 
-                    && (ackPacketParser.getAckNumber() == this.SequenceNum + 1))
+                    && (ackPacketParser.getAckNumber() == this.sequenceNumber))
                 break;
         }
+
+        this.ackNumber = ackPacketParser.getSequenceNumber();
+        this.ackNumber += 1;
+
+        getPacketLog("Ack", ackPacket, ackPacketParser.getSequenceNumber(),
+                ackPacketParser.getAckNumber());
     }
 
-    public TCPSocketImpl createTcpSocket(DatagramPacket dp, short recvSeqNumber) {
+    public TCPSocketImpl createTcpSocket(DatagramPacket dp) {
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
 
-        System.out.println("Est");
-        TCPSocketImpl tcpSocket = new TCPSocketImpl();
-        tcpSocket.init(socket, hostAddress, hostPort, this.SequenceNum, recvSeqNumber);
+        TCPSocketImpl tcpSocket = new TCPSocketImpl(socket, hostAddress, hostPort,
+                this.sequenceNumber, this.ackNumber);
+
+        System.out.println("**** Connection established! ****\n");
+
         return tcpSocket;
     } 
 
-    public short getRecvSeqNumber(DatagramPacket dp) {
+    public void setAckNumber(DatagramPacket dp) {
         TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
-        short recvSeqNumber = dpParser.getSequenceNumber(); 
-        return recvSeqNumber;
+        this.ackNumber = dpParser.getSequenceNumber();
+    }
+
+    public void sendSynAckPacket(DatagramPacket dp) throws Exception {
+        TCPHeaderGenerator synAckPacket = setupSynAckPacket(dp);
+        
+        DatagramPacket sendingPacket = synAckPacket.getPacket();
+        this.socket.send(sendingPacket);
+        sendPacketLog("Syn/Ack", sendingPacket);
     }
 
     @Override
     public TCPSocket accept() throws Exception {
-
-        // Receive Syn Packet
         DatagramPacket dp = getSynPacket();
-        short recvSeqNumber = getRecvSeqNumber(dp);
-
-        // Send Syn/Ack Packet
-        TCPHeaderGenerator synAckPacket = setupSynAckPacket(dp, recvSeqNumber);
-        this.socket.send(synAckPacket.getPacket());
-        System.out.println("Sent");
-
-        // Receive Ack packet
+        sendSynAckPacket(dp);
         getAckPacket();
 
-        return createTcpSocket(dp, recvSeqNumber);
+        return createTcpSocket(dp);
     }
 
     @Override
