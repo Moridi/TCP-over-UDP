@@ -7,8 +7,6 @@ public class TCPServerSocketImpl extends TCPServerSocket {
     private EnhancedDatagramSocket socket;
     private short sequenceNumber;
     private short ackNumber;
-    private String destIp;
-    private int destPort;
 
     public TCPServerSocketImpl(int port) throws Exception {
         super(port);
@@ -31,6 +29,17 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         System.out.println("To: " + sendingPacket.getAddress() + 
                 " : " + Integer.toString(sendingPacket.getPort()));
         System.out.println("###\n");
+    }
+
+    public void sendPacket(String name, TCPHeaderGenerator packet) throws Exception {
+        packet.setAckNumber(this.ackNumber);
+        packet.setSequenceNumber(this.sequenceNumber);
+        
+        DatagramPacket sendingPacket = packet.getPacket();
+        this.socket.send(sendingPacket);
+        this.sequenceNumber += 1;
+
+        sendPacketLog(name, sendingPacket);
     }
 
     public DatagramPacket getSynPacket() throws Exception {
@@ -110,12 +119,15 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         this.ackNumber = dpParser.getSequenceNumber();
     }
 
-    public void sendSynAckPacket(DatagramPacket dp) throws Exception {
-        TCPHeaderGenerator synAckPacket = setupSynAckPacket(dp);
-        
-        DatagramPacket sendingPacket = synAckPacket.getPacket();
-        this.socket.send(sendingPacket);
-        sendPacketLog("Syn/Ack", sendingPacket);
+    public void sendSynAckPacket(DatagramPacket packet) throws Exception {
+        String hostAddress = packet.getAddress().getHostAddress();
+        int hostPort = packet.getPort();
+
+        TCPHeaderGenerator synAckPacket = new TCPHeaderGenerator(hostAddress, hostPort);
+        synAckPacket.setSynFlag();
+        synAckPacket.setAckFlag();
+
+        sendPacket("Syn/Ack", synAckPacket);
     }
 
     @Override

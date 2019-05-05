@@ -42,19 +42,24 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("###\n");
     }
 
+    public void sendPacket(String name, TCPHeaderGenerator packet) throws Exception {
+        packet.setAckNumber(this.ackNumber);
+        packet.setSequenceNumber(this.sequenceNumber);
+        
+        DatagramPacket sendingPacket = packet.getPacket();
+        this.socket.send(sendingPacket);
+        this.sequenceNumber += 1;
+
+        sendPacketLog(name, sendingPacket);
+    }
+
     public void sendSynPacket() throws Exception {
         this.socket = new EnhancedDatagramSocket(SENDER_PORT);
 
         TCPHeaderGenerator synPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         synPacket.setSynFlag();
-        synPacket.setSequenceNumber(this.sequenceNumber);
 
-        DatagramPacket sendingPacket = synPacket.getPacket();
-        this.socket.send(sendingPacket);
-        
-        sendPacketLog("Syn", sendingPacket);
-        
-        this.sequenceNumber += 1;
+        sendPacket("Syn", synPacket);
     }
 
     public void getSynAckPacket() throws Exception {
@@ -81,14 +86,8 @@ public class TCPSocketImpl extends TCPSocket {
     public void sendAckPacket() throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         ackPacket.setAckFlag();
-        ackPacket.setAckNumber(this.ackNumber);
-        ackPacket.setSequenceNumber(this.sequenceNumber);
-        
-        DatagramPacket sendingPacket = ackPacket.getPacket();
-        this.socket.send(sendingPacket);
-        this.sequenceNumber += 1;
 
-        sendPacketLog("Ack", sendingPacket);
+        sendPacket("Ack", ackPacket);
     }
 
     public TCPSocketImpl(String ip, int port) throws Exception {
@@ -104,22 +103,12 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public void send(String pathToFile) throws Exception {
-        // throw new RuntimeException("Not implemented!");
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
-        ackPacket.setAckNumber(this.ackNumber);
-        ackPacket.setSequenceNumber(this.sequenceNumber);
-        
-        DatagramPacket sendingPacket = ackPacket.getPacket();
-        this.socket.send(sendingPacket);
-        this.sequenceNumber += 1;
-
-        sendPacketLog("Random", sendingPacket);
+        sendPacket(pathToFile, ackPacket);
     }
 
     @Override
     public void receive(String pathToFile) throws Exception {
-        // throw new RuntimeException("Not implemented!");
-        
         byte buffer[] = new byte[20];
         DatagramPacket packet = new DatagramPacket(buffer, 20);
         TCPHeaderParser packetParser;
