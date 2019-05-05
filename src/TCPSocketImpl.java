@@ -12,15 +12,15 @@ public class TCPSocketImpl extends TCPSocket {
     private String destIp;
     private int destPort;
 
-    public void init(String ip, int port) {
+    public void init(String ip, int port, short sequenceNumber) {
         this.destIp = ip;
         this.destPort = port;
-        this.sequenceNumber = FIRST_SEQUENCE;
+        this.sequenceNumber = sequenceNumber;
     }
 
     public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port,
             short mySeqNum, short ackNumber) {
-        init(ip, port);
+        init(ip, port, mySeqNum);
         this.socket = socket;
         this.ackNumber = ackNumber;
     }
@@ -86,13 +86,14 @@ public class TCPSocketImpl extends TCPSocket {
         
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
+        this.sequenceNumber += 1;
 
         sendPacketLog("Ack", sendingPacket);
     }
 
     public TCPSocketImpl(String ip, int port) throws Exception {
         super(ip, port);
-        init(ip, port);
+        init(ip, port, FIRST_SEQUENCE);
 
         sendSynPacket();
         getSynAckPacket();
@@ -103,12 +104,39 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public void send(String pathToFile) throws Exception {
-        throw new RuntimeException("Not implemented!");
+        // throw new RuntimeException("Not implemented!");
+        TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
+        ackPacket.setAckNumber(this.ackNumber);
+        ackPacket.setSequenceNumber(this.sequenceNumber);
+        
+        DatagramPacket sendingPacket = ackPacket.getPacket();
+        this.socket.send(sendingPacket);
+        this.sequenceNumber += 1;
+
+        sendPacketLog("Random", sendingPacket);
     }
 
     @Override
     public void receive(String pathToFile) throws Exception {
         // throw new RuntimeException("Not implemented!");
+        
+        byte buffer[] = new byte[20];
+        DatagramPacket packet = new DatagramPacket(buffer, 20);
+        TCPHeaderParser packetParser;
+        
+        while (true) {
+            socket.receive(packet);
+            packetParser = new TCPHeaderParser(packet.getData());
+
+            if (packetParser.getAckNumber() == this.sequenceNumber)
+                break;
+        }
+
+        this.ackNumber = packetParser.getSequenceNumber();
+        this.ackNumber += 1;
+
+        getPacketLog("Random", packet, packetParser.getSequenceNumber(),
+                packetParser.getAckNumber());
     }
 
     @Override
