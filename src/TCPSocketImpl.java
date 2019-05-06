@@ -1,5 +1,4 @@
 import java.net.DatagramPacket;
-import java.util.Arrays;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int SENDER_PORT = 9090;
@@ -8,21 +7,20 @@ public class TCPSocketImpl extends TCPSocket {
     static final int MIN_BUFFER_SIZE = 80;
 
     private EnhancedDatagramSocket socket;
+    private short mySeqNumber;
     private short nextSeqNumber;
     private short expectedSeqNumber;
     private String destIp;
     private int destPort;
 
-    private short sendBase;
     private short windowSize;
     private byte tempData[];
 
-    public void init(String ip, int port, short nextSeqNumber) {
+    public void init(String ip, int port, short seqNumber) {
         this.destIp = ip;
         this.destPort = port;
-        this.nextSeqNumber = nextSeqNumber;
+        this.mySeqNumber = seqNumber;
         this.windowSize = WINDOW_SIZE;
-        this.sendBase = nextSeqNumber;
 
         this.tempData = new byte[2 * WINDOW_SIZE];
         for (int i = 0; i < this.tempData.length; ++i) {
@@ -35,41 +33,26 @@ public class TCPSocketImpl extends TCPSocket {
         init(ip, port, mySeqNum);
         this.socket = socket;
         this.expectedSeqNumber = expectedSeqNumber;
-    }
-
-    public void sendPacketLog(String type, DatagramPacket sendingPacket) {
-        System.out.println("$$$$$$ " + type + " packet sent $$$$$");
-        System.out.println("To: " + sendingPacket.getAddress() + 
-                " : " + Integer.toString(sendingPacket.getPort()));
-        System.out.println("###\n");
+        nextSeqNumber = expectedSeqNumber;
     }
     
-    public void getPacketLog(String type, DatagramPacket dp,
-            short nextSeqNumber, short expectedSeqNumber, byte data[]) {
-        System.out.println("$$$$$$ " + type + " packet received $$$$$");
-        System.out.println("Data: ");
-        for (int i = 0; i < data.length; ++i) {
-            System.out.print(data[i]);
-            System.out.print(", ");
-        }
-        System.out.println("");
+    public void packetLog(String type, String name) {
 
-        System.out.print("nextSeqNumber: ");
-        System.out.println(nextSeqNumber);
-        System.out.print("expectedSeqNumber: ");
-        System.out.println(expectedSeqNumber);
-        System.out.println("###\n");
+        System.out.println(type + ": " + name + ", MySeq: " + Integer.toString(this.mySeqNumber) +
+        ", NextSeq: " + Integer.toString(this.nextSeqNumber) +
+        ", Exp: " + Integer.toString(this.expectedSeqNumber));
     }
 
     public void sendPacket(String name, TCPHeaderGenerator packet) throws Exception {
         packet.setAckNumber(this.expectedSeqNumber);
-        packet.setSequenceNumber(this.nextSeqNumber);
+        packet.setSequenceNumber(this.mySeqNumber);
         
         DatagramPacket sendingPacket = packet.getPacket();
         this.socket.send(sendingPacket);
-        this.nextSeqNumber += 1;
+        packetLog("Sender", name);
 
-        sendPacketLog(name, sendingPacket);
+        this.mySeqNumber += 1;
+        this.nextSeqNumber += 1;
     }
 
     public TCPHeaderParser receivePacket(String pathToFile) throws Exception {
@@ -77,16 +60,14 @@ public class TCPSocketImpl extends TCPSocket {
         DatagramPacket packet = new DatagramPacket(buffer, MIN_BUFFER_SIZE);
         
         socket.receive(packet);
+        packetLog("Receiver", pathToFile);
+
         TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(), packet.getLength());
 
-        if (packetParser.getAckNumber() == this.nextSeqNumber) {
-            this.expectedSeqNumber = packetParser.getSequenceNumber();
+        if (packetParser.getAckNumber() == this.mySeqNumber) {
+            // this.expectedSeqNumber = packetParser.getSequenceNumber();
             this.expectedSeqNumber += 1;
         }
-
-        getPacketLog(pathToFile, packet, packetParser.getSequenceNumber(),
-                packetParser.getAckNumber(), packetParser.getData());
-
         return packetParser;
     }
 
@@ -109,15 +90,17 @@ public class TCPSocketImpl extends TCPSocket {
             ackPacketParser = new TCPHeaderParser(packet.getData(), packet.getLength());
             if (ackPacketParser.isAckPacket() 
                     && ackPacketParser.isSynPacket() 
-                    && ackPacketParser.getAckNumber() == this.nextSeqNumber)
+                    && ackPacketParser.getAckNumber() == this.mySeqNumber)
                 break;
         }
+        
+        packetLog("Receiver", "Syn/Ack");
 
         this.expectedSeqNumber = ackPacketParser.getSequenceNumber();
+        this.nextSeqNumber = ackPacketParser.getSequenceNumber();
         this.expectedSeqNumber += 1;
+        this.nextSeqNumber += 1;
 
-        getPacketLog("Syn/Ack", packet, ackPacketParser.getSequenceNumber(),
-                ackPacketParser.getAckNumber(), ackPacketParser.getData());
     }
 
     public void sendAckPacket() throws Exception {
@@ -149,10 +132,23 @@ public class TCPSocketImpl extends TCPSocket {
     @Override
     public void send(String pathToFile) throws Exception {
         for (int i = 0; i < tempData.length; ++i) {
-            TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
-            ackPacket.addData(tempData[i]);
-            sendPacket("** : " + Integer.toString(i), ackPacket);
-            TCPHeaderParser receivedPacket = receivePacket("## : " + Integer.toString(i));
+            if (this.nextSeqNumber < expectedSeqNumber + windowSize) {
+                // if (expectedSeqNumber == this.nextSeqNumber)
+                    // Start the timer 
+
+                TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
+                ackPacket.addData(tempData[i]);
+                sendPacket("** : " + Integer.toString(i), ackPacket);
+
+                TCPHeaderParser receivedPacket = receivePacket("## : " + Integer.toString(i));
+
+                // if (expectedSeqNumber == this.nextSeqNumber)
+                    // Stop the timer
+                // else
+                    // Start the timer 
+            }
+            else
+                i--;
         }
     }
 

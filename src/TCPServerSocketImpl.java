@@ -12,22 +12,11 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         this.socket = new EnhancedDatagramSocket(port);
         this.sequenceNumber = FIRST_SEQUENCE;
     }
+    
+    public void packetLog(String type, String name) {
 
-    public void getPacketLog(String type, DatagramPacket dp,
-            short sequenceNumber, short expectedSeqNumber) {
-        System.out.println("$$$$$$ " + type + " packet received $$$$$");
-        System.out.print("sequenceNumber: ");
-        System.out.println(sequenceNumber);
-        System.out.print("expectedSeqNumber: ");
-        System.out.println(expectedSeqNumber);
-        System.out.println("###\n");
-    }
-
-    public void sendPacketLog(String type, DatagramPacket sendingPacket) {
-        System.out.println("$$$$$$ " + type + " packet sent $$$$$");
-        System.out.println("To: " + sendingPacket.getAddress() + 
-                " : " + Integer.toString(sendingPacket.getPort()));
-        System.out.println("###\n");
+        System.out.println(type + ": " + name + ", MySeq: " + Integer.toString(this.sequenceNumber) +
+                ", Exp: " + Integer.toString(this.expectedSeqNumber));
     }
 
     public void sendPacket(String name, TCPHeaderGenerator packet) throws Exception {
@@ -36,9 +25,8 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         
         DatagramPacket sendingPacket = packet.getPacket();
         this.socket.send(sendingPacket);
+        packetLog("Sender", name);
         this.sequenceNumber += 1;
-
-        sendPacketLog(name, sendingPacket);
     }
 
     public DatagramPacket getSynPacket() throws Exception {
@@ -52,11 +40,11 @@ public class TCPServerSocketImpl extends TCPServerSocket {
             if (dpParser.isSynPacket())
                 break;
         }
+        packetLog("Receiver", "Syn");
 
         this.expectedSeqNumber = dpParser.getSequenceNumber();
         this.expectedSeqNumber += 1;
 
-        getPacketLog("Syn", dp, dpParser.getSequenceNumber(), dpParser.getAckNumber());
 
         return dp;
     }
@@ -90,13 +78,11 @@ public class TCPServerSocketImpl extends TCPServerSocket {
                     && (ackPacketParser.getAckNumber() == this.sequenceNumber))
                 break;
         }
+        packetLog("Receiver", "Ack");
 
         this.expectedSeqNumber = ackPacketParser.getSequenceNumber();
         this.expectedSeqNumber += 1;
-
-        getPacketLog("Ack", ackPacket, ackPacketParser.getSequenceNumber(),
-                ackPacketParser.getAckNumber());
-    }
+    }   
 
     public TCPSocketImpl createTcpSocket(DatagramPacket dp) {
         String hostAddress = dp.getAddress().getHostAddress();
