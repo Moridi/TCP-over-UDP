@@ -1,16 +1,18 @@
 import java.net.DatagramPacket;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
+    static final short FIRST_SEQUENCE = 200;
+
     private EnhancedDatagramSocket socket;
-
     private short expectedSeqNumber;
-
-    private short sendBase;
     private short nextSeqNumber;
+    private short sendBase;
 
     public TCPServerSocketImpl(int port) throws Exception {
         super(port);
         this.socket = new EnhancedDatagramSocket(port);
+        this.nextSeqNumber = FIRST_SEQUENCE;
+        this.sendBase = FIRST_SEQUENCE;
     }
     
     public void packetLog(String type, String name) {
@@ -19,7 +21,6 @@ public class TCPServerSocketImpl extends TCPServerSocket {
                 ", Send base: " + Integer.toString(this.sendBase) +
                 ", NextSeq: " + Integer.toString(this.nextSeqNumber));
     }
-
     public DatagramPacket getSynPacket() throws Exception {
         byte buf[] = new byte[20];
         DatagramPacket dp = new DatagramPacket(buf, 20);
@@ -67,6 +68,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         packetLog("Receiver", "Ack");
 
         this.expectedSeqNumber += 1;
+        this.sendBase = ackPacketParser.getAckNumber();
     }   
 
     public TCPSocketImpl createTcpSocket(DatagramPacket dp) {
@@ -74,7 +76,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         int hostPort = dp.getPort();
 
         TCPSocketImpl tcpSocket = new TCPSocketImpl(socket,
-                hostAddress, hostPort, this.expectedSeqNumber);
+                hostAddress, hostPort, this.expectedSeqNumber, this.sendBase);
 
         System.out.println("**** Connection established! ****\n");
 
@@ -94,11 +96,14 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         synAckPacket.setSynFlag();
         synAckPacket.setAckFlag();
 
+        synAckPacket.setSequenceNumber(this.nextSeqNumber);
         synAckPacket.setAckNumber(this.expectedSeqNumber);
 
         DatagramPacket sendingPacket = synAckPacket.getPacket();
         this.socket.send(sendingPacket);
         packetLog("Sender", "Syn/Ack");
+
+        this.nextSeqNumber += 1;
     }
 
     @Override
