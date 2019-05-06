@@ -45,8 +45,15 @@ public class TCPSocketImpl extends TCPSocket {
     }
     
     public void getPacketLog(String type, DatagramPacket dp,
-            short nextSeqNumber, short expectedSeqNumber) {
+            short nextSeqNumber, short expectedSeqNumber, byte data[]) {
         System.out.println("$$$$$$ " + type + " packet received $$$$$");
+        System.out.println("Data: ");
+        for (int i = 0; i < data.length; ++i) {
+            System.out.print(data[i]);
+            System.out.print(", ");
+        }
+        System.out.println("");
+
         System.out.print("Sequence number: ");
         System.out.println(nextSeqNumber);
         System.out.print("Ack number: ");
@@ -72,7 +79,7 @@ public class TCPSocketImpl extends TCPSocket {
         socket.receive(packet);
         TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(), packet.getLength());
         getPacketLog(pathToFile, packet, packetParser.getSequenceNumber(),
-                packetParser.getAckNumber());
+                packetParser.getAckNumber(), packetParser.getData());
    
         
         return packetParser;
@@ -105,7 +112,7 @@ public class TCPSocketImpl extends TCPSocket {
         this.expectedSeqNumber += 1;
 
         getPacketLog("Syn/Ack", packet, ackPacketParser.getSequenceNumber(),
-                ackPacketParser.getAckNumber());
+                ackPacketParser.getAckNumber(), ackPacketParser.getData());
     }
 
     public void sendAckPacket() throws Exception {
@@ -153,7 +160,6 @@ public class TCPSocketImpl extends TCPSocket {
     public void receive(String pathToFile) throws Exception {
         for (int i = 0; i < tempData.length; ++i) {
             TCPHeaderParser packetParser = receivePacket("## : " + Integer.toString(i));
-            packetParser.getData();
             sendAckPacket("** : " + Integer.toString(i), packetParser);
         }
     }

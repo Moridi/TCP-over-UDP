@@ -54,11 +54,12 @@ public class TCPHeaderParser {
         return num;
     }
 
-    public void getData() {
-    // public byte[] getData() {
-        // byte[] data = new byte[ACK_NUM_SIZE];
-        System.out.println("%%%%%%%%%%%%% " + buffer.length + " %%%%%%%%%");
+    public byte[] getData() {
+        byte[] data = new byte[buffer.length - MIN_HEADER_SIZE];
 
+        for (int i = 0; i < data.length; ++i) {
+            data[i] = buffer[MIN_HEADER_SIZE + i];
+        }
+        return data;
     }
-
 }
