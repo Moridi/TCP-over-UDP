@@ -54,9 +54,9 @@ public class TCPSocketImpl extends TCPSocket {
         }
         System.out.println("");
 
-        System.out.print("Sequence number: ");
+        System.out.print("nextSeqNumber: ");
         System.out.println(nextSeqNumber);
-        System.out.print("Ack number: ");
+        System.out.print("expectedSeqNumber: ");
         System.out.println(expectedSeqNumber);
         System.out.println("###\n");
     }
@@ -78,10 +78,15 @@ public class TCPSocketImpl extends TCPSocket {
         
         socket.receive(packet);
         TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(), packet.getLength());
+
+        if (packetParser.getAckNumber() == this.nextSeqNumber) {
+            this.expectedSeqNumber = packetParser.getSequenceNumber();
+            this.expectedSeqNumber += 1;
+        }
+
         getPacketLog(pathToFile, packet, packetParser.getSequenceNumber(),
                 packetParser.getAckNumber(), packetParser.getData());
-   
-        
+
         return packetParser;
     }
 
@@ -135,11 +140,6 @@ public class TCPSocketImpl extends TCPSocket {
     
     public void sendAckPacket(String pathToFile, TCPHeaderParser packetParser)
             throws Exception {
-        if (packetParser.getAckNumber() == this.nextSeqNumber) {
-                this.expectedSeqNumber = packetParser.getSequenceNumber();
-                this.expectedSeqNumber += 1;
-        }
-
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         ackPacket.setAckFlag();
         

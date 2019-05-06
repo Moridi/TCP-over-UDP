@@ -1,5 +1,4 @@
 import java.net.DatagramPacket;
-import java.util.Arrays;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
     static final short FIRST_SEQUENCE = 200;
@@ -17,9 +16,9 @@ public class TCPServerSocketImpl extends TCPServerSocket {
     public void getPacketLog(String type, DatagramPacket dp,
             short sequenceNumber, short expectedSeqNumber) {
         System.out.println("$$$$$$ " + type + " packet received $$$$$");
-        System.out.print("Sequence number: ");
+        System.out.print("sequenceNumber: ");
         System.out.println(sequenceNumber);
-        System.out.print("Ack number: ");
+        System.out.print("expectedSeqNumber: ");
         System.out.println(expectedSeqNumber);
         System.out.println("###\n");
     }
