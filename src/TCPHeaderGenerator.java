@@ -1,30 +1,29 @@
-// package TCPHeaderGenerator;
-
-import java.nio.*; 
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 
 public class TCPHeaderGenerator {
-    private int MINIMUM_HEADER_SIZE = 40;
+    private int MIN_HEADER_SIZE = 40;
+    private int MIN_PAYLOAD_SIZE = 40;
     private int SEQ_NUM_SIZE = 2;
     private int ACK_NUM_SIZE = 2;
 
     private byte buffer[];
     private int port;
     private String ip;
+    private int currentDataIndex;
 
     // [0] | [1] | [2] | [3] | [4] | [5] | [6]:ACK | [7]:SYN
-    public int flagIndex = 0;
-    public int seqNumIndex = 1;
-    public int ackNumIndex = 3;
+    private int flagIndex = 0;
+    private int seqNumIndex = 1;
+    private int ackNumIndex = 3;
 
     public TCPHeaderGenerator(String _ip, int _port) {
         this.port = _port;
         this.ip = _ip;
-        this.buffer = new byte[MINIMUM_HEADER_SIZE];
+        this.buffer = new byte[MIN_HEADER_SIZE + MIN_PAYLOAD_SIZE];
+        this.currentDataIndex = MIN_HEADER_SIZE;
         buffer[flagIndex] = 0x00;
     }
     public void setSequenceNumber(short seqNumber) {        
@@ -34,7 +33,6 @@ public class TCPHeaderGenerator {
 
         for (int i = 0; i < SEQ_NUM_SIZE; i++)
             buffer[seqNumIndex + i] = bytes[i];
-
     }
 
     public void setAckNumber(short ackNumber) {        
@@ -68,6 +66,11 @@ public class TCPHeaderGenerator {
 
     public DatagramPacket getPacket() throws Exception {
         InetAddress address = InetAddress.getByName(ip);
-        return new DatagramPacket(buffer, buffer.length, address, port);
+        return new DatagramPacket(buffer, currentDataIndex, address, port);
+    }
+
+    public void addData(byte newData) {
+        buffer[currentDataIndex] = newData;
+        currentDataIndex++;
     }
 }

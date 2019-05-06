@@ -6,7 +6,6 @@ public class Receiver {
         TCPServerSocket tcpServerSocket = new TCPServerSocketImpl(12345);
         TCPSocket tcpSocket = tcpServerSocket.accept();
         tcpSocket.receive("firstOneReceived.mp3");
-        tcpSocket.send("secondOneSent.mp3");
         // tcpSocket.close();
         // tcpServerSocket.close();
     }

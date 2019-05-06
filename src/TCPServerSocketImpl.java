@@ -49,7 +49,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         
         while (true) {
             socket.receive(dp);
-            dpParser = new TCPHeaderParser(dp.getData());
+            dpParser = new TCPHeaderParser(dp.getData(), dp.getLength());
             if (dpParser.isSynPacket())
                 break;
         }
@@ -63,9 +63,6 @@ public class TCPServerSocketImpl extends TCPServerSocket {
     }
 
     public TCPHeaderGenerator setupSynAckPacket(DatagramPacket dp) throws Exception {
-
-        TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
-
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
 
@@ -88,7 +85,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         
         while (true) {
             socket.receive(ackPacket);
-            ackPacketParser = new TCPHeaderParser(ackPacket.getData());
+            ackPacketParser = new TCPHeaderParser(ackPacket.getData(), ackPacket.getLength());
           
             if (ackPacketParser.isAckPacket() 
                     && (ackPacketParser.getAckNumber() == this.sequenceNumber))
@@ -115,7 +112,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
     } 
 
     public void setAckNumber(DatagramPacket dp) {
-        TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData());
+        TCPHeaderParser dpParser = new TCPHeaderParser(dp.getData(), dp.getLength());
         this.expectedSeqNumber = dpParser.getSequenceNumber();
     }
 

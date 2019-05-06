@@ -1,9 +1,10 @@
 
 import java.nio.*; 
+import java.util.Arrays;
 
 public class TCPHeaderParser {
     private byte buffer[];
-    private int MINIMUM_HEADER_SIZE = 40;
+    private int MIN_HEADER_SIZE = 40;
     private int SEQ_NUM_SIZE = 2;
     private int ACK_NUM_SIZE = 2;
 
@@ -12,8 +13,8 @@ public class TCPHeaderParser {
     public int seqNumIndex = 1;
     public int ackNumIndex = 3;
 
-    public TCPHeaderParser(byte buffer[]) {
-        this.buffer = buffer;
+    public TCPHeaderParser(byte buffer[], int length) {
+        this.buffer = Arrays.copyOfRange(buffer, 0, length);
     }
 
     public boolean isSynPacket() {
@@ -52,4 +53,12 @@ public class TCPHeaderParser {
 
         return num;
     }
-} 
+
+    public void getData() {
+    // public byte[] getData() {
+        // byte[] data = new byte[ACK_NUM_SIZE];
+        System.out.println("%%%%%%%%%%%%% " + buffer.length + " %%%%%%%%%");
+
+    }
+
+}
