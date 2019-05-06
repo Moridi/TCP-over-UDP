@@ -7,20 +7,23 @@ public class TCPSocketImpl extends TCPSocket {
     static final int MIN_BUFFER_SIZE = 80;
 
     private EnhancedDatagramSocket socket;
-    private short mySeqNumber;
-    private short nextSeqNumber;
     private short expectedSeqNumber;
+
+    private short sendBase;
+    private short nextSeqNumber;
+
     private String destIp;
     private int destPort;
 
     private short windowSize;
     private byte tempData[];
 
-    public void init(String ip, int port, short seqNumber) {
+    public void init(String ip, int port) {
         this.destIp = ip;
         this.destPort = port;
-        this.mySeqNumber = seqNumber;
         this.windowSize = WINDOW_SIZE;
+        this.sendBase = FIRST_SEQUENCE;
+        this.nextSeqNumber = FIRST_SEQUENCE;
 
         this.tempData = new byte[2 * WINDOW_SIZE];
         for (int i = 0; i < this.tempData.length; ++i) {
@@ -29,29 +32,26 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port,
-            short mySeqNum, short expectedSeqNumber) {
-        init(ip, port, mySeqNum);
+            short expectedSeqNumber) {
+        init(ip, port);
         this.socket = socket;
         this.expectedSeqNumber = expectedSeqNumber;
-        nextSeqNumber = expectedSeqNumber;
     }
     
     public void packetLog(String type, String name) {
-
-        System.out.println(type + ": " + name + ", MySeq: " + Integer.toString(this.mySeqNumber) +
-        ", NextSeq: " + Integer.toString(this.nextSeqNumber) +
-        ", Exp: " + Integer.toString(this.expectedSeqNumber));
+        System.out.println(type + ": " + name +
+                ", Exp: " + Integer.toString(this.expectedSeqNumber) +
+                ", Send base: " + Integer.toString(this.sendBase) +
+                ", NextSeq: " + Integer.toString(this.nextSeqNumber));
     }
 
     public void sendPacket(String name, TCPHeaderGenerator packet) throws Exception {
-        packet.setAckNumber(this.expectedSeqNumber);
-        packet.setSequenceNumber(this.mySeqNumber);
+        packet.setSequenceNumber(this.nextSeqNumber);
         
         DatagramPacket sendingPacket = packet.getPacket();
         this.socket.send(sendingPacket);
         packetLog("Sender", name);
 
-        this.mySeqNumber += 1;
         this.nextSeqNumber += 1;
     }
 
@@ -62,12 +62,9 @@ public class TCPSocketImpl extends TCPSocket {
         socket.receive(packet);
         packetLog("Receiver", pathToFile);
 
-        TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(), packet.getLength());
+        TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(),
+                packet.getLength());
 
-        if (packetParser.getAckNumber() == this.mySeqNumber) {
-            // this.expectedSeqNumber = packetParser.getSequenceNumber();
-            this.expectedSeqNumber += 1;
-        }
         return packetParser;
     }
 
@@ -77,7 +74,13 @@ public class TCPSocketImpl extends TCPSocket {
         TCPHeaderGenerator synPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         synPacket.setSynFlag();
 
-        sendPacket("Syn", synPacket);
+        synPacket.setSequenceNumber(this.nextSeqNumber);
+        
+        DatagramPacket sendingPacket = synPacket.getPacket();
+        this.socket.send(sendingPacket);
+        packetLog("Sender", "Syn");
+
+        this.nextSeqNumber += 1;
     }
 
     public void getSynAckPacket() throws Exception {
@@ -88,19 +91,14 @@ public class TCPSocketImpl extends TCPSocket {
         while (true) {
             socket.receive(packet);
             ackPacketParser = new TCPHeaderParser(packet.getData(), packet.getLength());
-            if (ackPacketParser.isAckPacket() 
-                    && ackPacketParser.isSynPacket() 
-                    && ackPacketParser.getAckNumber() == this.mySeqNumber)
+
+            if (ackPacketParser.isAckPacket() && ackPacketParser.isSynPacket())
                 break;
         }
         
         packetLog("Receiver", "Syn/Ack");
 
-        this.expectedSeqNumber = ackPacketParser.getSequenceNumber();
-        this.nextSeqNumber = ackPacketParser.getSequenceNumber();
-        this.expectedSeqNumber += 1;
-        this.nextSeqNumber += 1;
-
+        this.sendBase = ackPacketParser.getAckNumber();
     }
 
     public void sendAckPacket() throws Exception {
@@ -112,7 +110,7 @@ public class TCPSocketImpl extends TCPSocket {
 
     public TCPSocketImpl(String ip, int port) throws Exception {
         super(ip, port);
-        init(ip, port, FIRST_SEQUENCE);
+        init(ip, port);
 
         sendSynPacket();
         getSynAckPacket();
@@ -132,7 +130,7 @@ public class TCPSocketImpl extends TCPSocket {
     @Override
     public void send(String pathToFile) throws Exception {
         for (int i = 0; i < tempData.length; ++i) {
-            if (this.nextSeqNumber < expectedSeqNumber + windowSize) {
+            if (this.nextSeqNumber < this.sendBase + windowSize) {
                 // if (expectedSeqNumber == this.nextSeqNumber)
                     // Start the timer 
 
@@ -141,14 +139,17 @@ public class TCPSocketImpl extends TCPSocket {
                 sendPacket("** : " + Integer.toString(i), ackPacket);
 
                 TCPHeaderParser receivedPacket = receivePacket("## : " + Integer.toString(i));
-
-                // if (expectedSeqNumber == this.nextSeqNumber)
-                    // Stop the timer
-                // else
-                    // Start the timer 
+                
+                if (receivedPacket.isAckPacket()) {
+                    this.sendBase = (short)(receivedPacket.getAckNumber() + 1);
+                    // if (sendBase == nextSeqNumber)
+                        // Stop the timer
+                    // else
+                        // Start the timer 
+                        
+                    this.expectedSeqNumber += 1;
+                }
             }
-            else
-                i--;
         }
     }
 
@@ -156,6 +157,12 @@ public class TCPSocketImpl extends TCPSocket {
     public void receive(String pathToFile) throws Exception {
         for (int i = 0; i < tempData.length; ++i) {
             TCPHeaderParser packetParser = receivePacket("## : " + Integer.toString(i));
+
+            // System.out.println("hasseqnum(rcvpkt,expectedseqnum): " +
+            //         packetParser.getSequenceNumber() + ", Expected: " +
+            //         this.expectedSeqNumber);
+
+            this.expectedSeqNumber += 1;
             sendAckPacket("** : " + Integer.toString(i), packetParser);
         }
     }
