@@ -1,4 +1,6 @@
 import java.net.DatagramPacket;
+import java.util.Arrays;
+import java.util.Random;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int SENDER_PORT = 9090;
@@ -127,60 +129,120 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("**** Connection established! ****\n");
     }
     
-    public void sendAckPacket(String pathToFile, TCPHeaderParser packetParser)
+    public void sendAckPacket(String pathToFile)
             throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         ackPacket.setAckFlag();
         
-        sendPacket(pathToFile, ackPacket);
+        ackPacket.setSequenceNumber(this.nextSeqNumber);
+        ackPacket.setAckNumber(this.expectedSeqNumber);
+        
+        DatagramPacket sendingPacket = ackPacket.getPacket();
+        this.socket.send(sendingPacket);
+        packetLog("Sender", pathToFile);
+        this.nextSeqNumber += 1;
+    }
+        
+    public void sendDataPacket(TCPHeaderGenerator ackPacket,
+            String type, String name) throws Exception {
+        ackPacket.setSequenceNumber(this.nextSeqNumber);
+        DatagramPacket sendingPacket = ackPacket.getPacket();
+
+        System.out.println("Check it out: " + this.nextSeqNumber);
+        this.socket.send(sendingPacket);
+        packetLog(type, name);
+
+        this.nextSeqNumber += 1;
+    }
+
+    public short receiveAckPacket(String type, String name) throws Exception {
+        TCPHeaderParser receivedPacket = receivePacket();
+        
+        if (receivedPacket.isAckPacket() 
+                && (this.sendBase <= receivedPacket.getAckNumber())) {
+            this.sendBase = receivedPacket.getAckNumber();
+            this.expectedSeqNumber = receivedPacket.getSequenceNumber();
+        }
+        System.out.println("");
+
+        packetLog(type, name);
+
+        return receivedPacket.getAckNumber();
     }
 
     @Override
     public void send(String pathToFile) throws Exception {
 
         packetLog("Sending part", "Start");
+        
+        int dupAckIndex = -1;
+        int dupAckCounter = 0;
+
         for (int i = 0; i < tempData.length; ++i) {
+
             if (this.nextSeqNumber < this.sendBase + windowSize) {
-        //         // if (expectedSeqNumber == this.nextSeqNumber)
-        //             // Start the timer 
-
+                
                 TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
-                ackPacket.addData(tempData[0]);
-                
-                sendPacket("** : " + Integer.toString(0), ackPacket);
+                int j = i;
 
-                TCPHeaderParser receivedPacket = receivePacket();
-                
-                if (receivedPacket.isAckPacket()) {
-                    this.sendBase = receivedPacket.getAckNumber();
-                    // if (sendBase == nextSeqNumber)
-                        // Stop the timer
-                    // else
-                        // Start the timer 
-                        
-                    this.expectedSeqNumber += 1;
+                if (dupAckCounter >= 3) {
+
+                    // @TODO: Remove it (Random element dropped in the receiver)                
+                    j = 1;
+                    this.nextSeqNumber = this.sendBase;
+                    
+                    // @ TODO: I don't know why!
+                    this.nextSeqNumber--;
+
+                    i--;
+                    dupAckCounter = 0;
                 }
-                packetLog("Received", "0");
 
+                ackPacket.addData(tempData[j]);
+
+                sendDataPacket(ackPacket, "Sender", "** : " + Integer.toString(j));
+                short lastAck = receiveAckPacket("Received", pathToFile);
+                
+                if (dupAckIndex == lastAck)
+                    dupAckCounter++;
+                else
+                    dupAckIndex = lastAck;
             }
+            else
+                System.out.println("Dropped!");
         }
+    }
+
+    public void receiveData(Boolean[] isReceived, String type) throws Exception {
+        TCPHeaderParser packetParser = receivePacket();
+        byte i = packetParser.getData()[0];
+        
+        // @TODO: Remove it (Random element dropped in the receiver)
+        if (i == 1)
+            return;
+
+        if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
+            this.sendBase = packetParser.getAckNumber();
+            this.expectedSeqNumber += 1;
+            isReceived[i] = true;
+        }
+
+        packetLog(type, Byte.toString(i));
     }
 
     @Override
     public void receive(String pathToFile) throws Exception {
         packetLog("Receiving part", "Start");
 
-        for (int i = 0; i < tempData.length; ++i) {
-            TCPHeaderParser packetParser = receivePacket();
-            
-            if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
-                this.sendBase = packetParser.getAckNumber();
-                this.expectedSeqNumber += 1;
-            }
-            packetLog("Received", "0");
+        Boolean[] isReceived = new Boolean[10];
+        Arrays.fill(isReceived, false);
 
-            sendAckPacket("** : " + Integer.toString(0), packetParser);
-            
+        while (true) {
+            if (!Arrays.asList(isReceived).contains(false))
+                break;
+
+            receiveData(isReceived, "Received");
+            sendAckPacket(pathToFile);
         }
     }
 
