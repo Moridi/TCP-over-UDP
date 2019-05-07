@@ -1,8 +1,12 @@
+import java.io.IOException;
 import java.net.DatagramPacket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.util.Arrays;
 import java.util.Random;
 
 public class TCPSocketImpl extends TCPSocket {
+    static final int RCV_TIME_OUT = 1000;
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
     static final short WINDOW_SIZE = 5;
@@ -29,28 +33,25 @@ public class TCPSocketImpl extends TCPSocket {
 
         this.tempData = new byte[2 * WINDOW_SIZE];
         for (int i = 0; i < this.tempData.length; ++i) {
-            tempData[i] = (byte)i;
+            tempData[i] = (byte) i;
         }
     }
 
-    public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port,
-            short expectedSeqNumber, short base) {
+    public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port, short expectedSeqNumber, short base) {
         init(ip, port, base);
         this.socket = socket;
         this.expectedSeqNumber = expectedSeqNumber;
     }
-    
+
     public void packetLog(String type, String name) {
-        System.out.println(type + ": " + name +
-                ", Exp: " + Integer.toString(this.expectedSeqNumber) +
-                ", Send base: " + Integer.toString(this.sendBase) +
-                ", NextSeq: " + Integer.toString(this.nextSeqNumber));
+        System.out.println(type + ": " + name + ", Exp: " + Integer.toString(this.expectedSeqNumber) + ", Send base: "
+                + Integer.toString(this.sendBase) + ", NextSeq: " + Integer.toString(this.nextSeqNumber));
     }
 
     public void sendPacket(String name, TCPHeaderGenerator packet) throws Exception {
         packet.setSequenceNumber(this.nextSeqNumber);
         packet.setAckNumber(this.expectedSeqNumber);
-        
+
         DatagramPacket sendingPacket = packet.getPacket();
         this.socket.send(sendingPacket);
         this.nextSeqNumber += 1;
@@ -61,12 +62,11 @@ public class TCPSocketImpl extends TCPSocket {
     public TCPHeaderParser receivePacket() throws Exception {
         byte buffer[] = new byte[MIN_BUFFER_SIZE];
         DatagramPacket packet = new DatagramPacket(buffer, MIN_BUFFER_SIZE);
-        
+
         socket.receive(packet);
-        
-        TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(),
-                packet.getLength());
-        
+
+        TCPHeaderParser packetParser = new TCPHeaderParser(packet.getData(), packet.getLength());
+
         return packetParser;
     }
 
@@ -77,7 +77,7 @@ public class TCPSocketImpl extends TCPSocket {
         synPacket.setSynFlag();
 
         synPacket.setSequenceNumber(this.nextSeqNumber);
-        
+
         DatagramPacket sendingPacket = synPacket.getPacket();
         this.socket.send(sendingPacket);
         packetLog("Sender", "Syn");
@@ -85,11 +85,13 @@ public class TCPSocketImpl extends TCPSocket {
         this.nextSeqNumber += 1;
     }
 
-    public void getSynAckPacket() throws Exception {
+    public void getSynAckPacket() throws IOException {
         byte bufAck[] = new byte[MIN_BUFFER_SIZE];
         DatagramPacket packet = new DatagramPacket(bufAck, MIN_BUFFER_SIZE);
-
         TCPHeaderParser ackPacketParser;
+
+        socket.setSoTimeout(this.RCV_TIME_OUT);
+        
         while (true) {
             socket.receive(packet);
             ackPacketParser = new TCPHeaderParser(packet.getData(), packet.getLength());
@@ -98,10 +100,11 @@ public class TCPSocketImpl extends TCPSocket {
                 break;
         }
         
+        socket.setSoTimeout(0);
         packetLog("Receiver", "Syn/Ack");
 
         this.sendBase = ackPacketParser.getAckNumber();
-        this.expectedSeqNumber = (short)(ackPacketParser.getSequenceNumber() + 1);
+        this.expectedSeqNumber = (short) (ackPacketParser.getSequenceNumber() + 1);
     }
 
     public void sendAckPacket() throws Exception {
@@ -110,7 +113,7 @@ public class TCPSocketImpl extends TCPSocket {
 
         ackPacket.setSequenceNumber(this.nextSeqNumber);
         ackPacket.setAckNumber(this.expectedSeqNumber);
-        
+
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
         packetLog("Sender", "Ack");
@@ -122,29 +125,36 @@ public class TCPSocketImpl extends TCPSocket {
         super(ip, port);
         init(ip, port, FIRST_SEQUENCE);
 
-        sendSynPacket();
-        getSynAckPacket();
+        // TODO: add MAX_RETRY here.
+        while(true) {
+            try {
+                sendSynPacket();
+                getSynAckPacket();
+                break;
+            } catch (SocketTimeoutException ex) {
+                this.nextSeqNumber -= 1;
+            }
+        }
+        // TODO: what is ACKPacket gets lost?
         sendAckPacket();
-        
+
         System.out.println("**** Connection established! ****\n");
     }
-    
-    public void sendAckPacket(String pathToFile)
-            throws Exception {
+
+    public void sendAckPacket(String pathToFile) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         ackPacket.setAckFlag();
-        
+
         ackPacket.setSequenceNumber(this.nextSeqNumber);
         ackPacket.setAckNumber(this.expectedSeqNumber);
-        
+
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
         packetLog("Sender", pathToFile);
         this.nextSeqNumber += 1;
     }
-        
-    public void sendDataPacket(TCPHeaderGenerator ackPacket,
-            String type, String name) throws Exception {
+
+    public void sendDataPacket(TCPHeaderGenerator ackPacket, String type, String name) throws Exception {
         ackPacket.setSequenceNumber(this.nextSeqNumber);
         DatagramPacket sendingPacket = ackPacket.getPacket();
 
@@ -157,9 +167,8 @@ public class TCPSocketImpl extends TCPSocket {
 
     public short receiveAckPacket(String type, String name) throws Exception {
         TCPHeaderParser receivedPacket = receivePacket();
-        
-        if (receivedPacket.isAckPacket() 
-                && (this.sendBase <= receivedPacket.getAckNumber())) {
+
+        if (receivedPacket.isAckPacket() && (this.sendBase <= receivedPacket.getAckNumber())) {
             this.sendBase = receivedPacket.getAckNumber();
             this.expectedSeqNumber = receivedPacket.getSequenceNumber();
         }
@@ -174,23 +183,23 @@ public class TCPSocketImpl extends TCPSocket {
     public void send(String pathToFile) throws Exception {
 
         packetLog("Sending part", "Start");
-        
+
         int dupAckIndex = -1;
         int dupAckCounter = 0;
 
         for (int i = 0; i < tempData.length; ++i) {
 
             if (this.nextSeqNumber < this.sendBase + windowSize) {
-                
+
                 TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
                 int j = i;
 
                 if (dupAckCounter >= 3) {
 
-                    // @TODO: Remove it (Random element dropped in the receiver)                
+                    // @TODO: Remove it (Random element dropped in the receiver)
                     j = 1;
                     this.nextSeqNumber = this.sendBase;
-                    
+
                     // @ TODO: I don't know why!
                     this.nextSeqNumber--;
 
@@ -202,13 +211,12 @@ public class TCPSocketImpl extends TCPSocket {
 
                 sendDataPacket(ackPacket, "Sender", "** : " + Integer.toString(j));
                 short lastAck = receiveAckPacket("Received", pathToFile);
-                
+
                 if (dupAckIndex == lastAck)
                     dupAckCounter++;
                 else
                     dupAckIndex = lastAck;
-            }
-            else
+            } else
                 System.out.println("Dropped!");
         }
     }
@@ -216,7 +224,7 @@ public class TCPSocketImpl extends TCPSocket {
     public void receiveData(Boolean[] isReceived, String type) throws Exception {
         TCPHeaderParser packetParser = receivePacket();
         byte i = packetParser.getData()[0];
-        
+
         // @TODO: Remove it (Random element dropped in the receiver)
         if (i == 1)
             return;

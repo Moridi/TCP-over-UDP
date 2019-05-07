@@ -1,4 +1,6 @@
 import java.net.DatagramPacket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 
 public class TCPServerSocketImpl extends TCPServerSocket {
     static final short FIRST_SEQUENCE = 200;
@@ -14,18 +16,19 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         this.nextSeqNumber = FIRST_SEQUENCE;
         this.sendBase = FIRST_SEQUENCE;
     }
-    
+
     public void packetLog(String type, String name) {
-        System.out.println(type + ": " + name +
-                ", Exp: " + Integer.toString(this.expectedSeqNumber) +
-                ", Send base: " + Integer.toString(this.sendBase) +
-                ", NextSeq: " + Integer.toString(this.nextSeqNumber));
+        System.out.println(type + ": " + name + ", Exp: " + Integer.toString(this.expectedSeqNumber) + ", Send base: "
+                + Integer.toString(this.sendBase) + ", NextSeq: " + Integer.toString(this.nextSeqNumber));
     }
+
     public DatagramPacket getSynPacket() throws Exception {
         byte buf[] = new byte[20];
         DatagramPacket dp = new DatagramPacket(buf, 20);
         TCPHeaderParser dpParser;
-        
+
+        socket.setSoTimeout(10 * 1000);
+
         while (true) {
             socket.receive(dp);
             dpParser = new TCPHeaderParser(dp.getData(), dp.getLength());
@@ -34,7 +37,7 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         }
         packetLog("Receiver", "Syn");
 
-        this.expectedSeqNumber = (short)(dpParser.getSequenceNumber() + 1);
+        this.expectedSeqNumber = (short) (dpParser.getSequenceNumber() + 1);
 
         return dp;
     }
@@ -51,29 +54,31 @@ public class TCPServerSocketImpl extends TCPServerSocket {
         return synAckPacket;
     }
 
-    public void getAckPacket() throws Exception{
+    public void getAckPacket() throws Exception {
 
         byte ackBuf[] = new byte[20];
         DatagramPacket ackPacket = new DatagramPacket(ackBuf, 20);
         TCPHeaderParser ackPacketParser;
-        
+
+        socket.setSoTimeout(1000);
+
         while (true) {
             socket.receive(ackPacket);
             ackPacketParser = new TCPHeaderParser(ackPacket.getData(), ackPacket.getLength());
-    
-            if (ackPacketParser.isAckPacket() 
-                    && (ackPacketParser.getSequenceNumber() == this.expectedSeqNumber))
+
+            if (ackPacketParser.isAckPacket() && (ackPacketParser.getSequenceNumber() == this.expectedSeqNumber))
                 break;
         }
         packetLog("Receiver", "Ack");
 
         this.expectedSeqNumber += 1;
         this.sendBase = ackPacketParser.getAckNumber();
-    }   
+    }
 
-    public TCPSocketImpl createTcpSocket(DatagramPacket dp) {
+    public TCPSocketImpl createTcpSocket(DatagramPacket dp) throws SocketException {
         String hostAddress = dp.getAddress().getHostAddress();
         int hostPort = dp.getPort();
+        socket.setSoTimeout(0);
 
         TCPSocketImpl tcpSocket = new TCPSocketImpl(socket,
                 hostAddress, hostPort, this.expectedSeqNumber, this.sendBase);
@@ -109,8 +114,17 @@ public class TCPServerSocketImpl extends TCPServerSocket {
     @Override
     public TCPSocket accept() throws Exception {
         DatagramPacket dp = getSynPacket();
-        sendSynAckPacket(dp);
-        getAckPacket();
+
+        // TODO: add MAX_RETRY here.
+        while(true) {
+            try {
+                sendSynAckPacket(dp);
+                getAckPacket();
+                break;
+            } catch (SocketTimeoutException ex) {
+                this.nextSeqNumber -= 1;
+            }
+        }
 
         return createTcpSocket(dp);
     }
