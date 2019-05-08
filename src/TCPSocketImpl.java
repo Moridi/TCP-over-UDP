@@ -44,7 +44,7 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void packetLog(String type, String name) {
-        System.out.println(type + ": " + name + ", Exp: " + Integer.toString(this.expectedSeqNumber) + ", Send base: "
+        System.out.println(type + ": " + name + ", ExpSeqNum: " + Integer.toString(this.expectedSeqNumber) + ", Send base: "
                 + Integer.toString(this.sendBase) + ", NextSeq: " + Integer.toString(this.nextSeqNumber));
     }
 
@@ -91,7 +91,7 @@ public class TCPSocketImpl extends TCPSocket {
         TCPHeaderParser ackPacketParser;
 
         socket.setSoTimeout(this.RCV_TIME_OUT);
-        
+
         while (true) {
             socket.receive(packet);
             ackPacketParser = new TCPHeaderParser(packet.getData(), packet.getLength());
@@ -99,7 +99,7 @@ public class TCPSocketImpl extends TCPSocket {
             if (ackPacketParser.isAckPacket() && ackPacketParser.isSynPacket())
                 break;
         }
-        
+
         socket.setSoTimeout(0);
         packetLog("Receiver", "Syn/Ack");
 
@@ -126,7 +126,7 @@ public class TCPSocketImpl extends TCPSocket {
         init(ip, port, FIRST_SEQUENCE);
 
         // TODO: add MAX_RETRY here.
-        while(true) {
+        while (true) {
             try {
                 sendSynPacket();
                 getSynAckPacket();
@@ -166,12 +166,18 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public short receiveAckPacket(String type, String name) throws Exception {
-        TCPHeaderParser receivedPacket = receivePacket();
-
-        if (receivedPacket.isAckPacket() && (this.sendBase <= receivedPacket.getAckNumber())) {
-            this.sendBase = receivedPacket.getAckNumber();
-            this.expectedSeqNumber = receivedPacket.getSequenceNumber();
+        TCPHeaderParser receivedPacket;
+        while(true) {
+            receivedPacket = receivePacket();
+            if (receivedPacket.isAckPacket())
+                break;
         }
+        this.expectedSeqNumber = (short) Math.max(this.expectedSeqNumber, receivedPacket.getSequenceNumber());
+
+        // if ((this.sendBase <= receivedPacket.getAckNumber())) {
+        //     this.sendBase = receivedPacket.getAckNumber();
+        //     this.expectedSeqNumber = receivedPacket.getSequenceNumber();
+        // }
         System.out.println("");
 
         packetLog(type, name);
@@ -184,40 +190,55 @@ public class TCPSocketImpl extends TCPSocket {
 
         packetLog("Sending part", "Start");
 
-        int dupAckIndex = -1;
+        this.sendBase = this.nextSeqNumber;
         int dupAckCounter = 0;
+        short lastRcvdAck;
+        short initialSendBase = this.sendBase;
 
-        for (int i = 0; i < tempData.length; ++i) {
 
-            if (this.nextSeqNumber < this.sendBase + windowSize) {
+        // TODO: start timer (on timeOut: this.nextSeqNum = this.sendBase)
+        while (this.sendBase - initialSendBase < tempData.length) {
 
+            // sending not sent segments in window:
+            while (this.nextSeqNumber < this.sendBase + this.windowSize) {
                 TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
-                int j = i;
 
-                if (dupAckCounter >= 3) {
+                int dataIndex = this.nextSeqNumber - initialSendBase;
+                ackPacket.addData(tempData[dataIndex]);
+                sendDataPacket(ackPacket, "Sender", "** : " + Integer.toString(dataIndex));
+            }
 
-                    // @TODO: Remove it (Random element dropped in the receiver)
-                    j = 1;
-                    this.nextSeqNumber = this.sendBase;
+            this.socket.setSoTimeout(500);
+            try {
+                lastRcvdAck = receiveAckPacket("Received", pathToFile);
+            } catch (SocketTimeoutException ex) {
+                continue;
+            }
 
-                    // @ TODO: I don't know why!
-                    this.nextSeqNumber--;
+            // TODO: check when (lastRcvdAck == this.sendBase), is it dupACK ?!
+            if (lastRcvdAck > this.sendBase) {
+                this.sendBase = lastRcvdAck;
+                // TODO: restart timer
+            } else {
+                // dup Ack:
+                dupAckCounter++;
+            }
 
-                    i--;
-                    dupAckCounter = 0;
-                }
 
-                ackPacket.addData(tempData[j]);
+            if (dupAckCounter >= 3) {
+                // reTransmit sendBase
+                TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
 
-                sendDataPacket(ackPacket, "Sender", "** : " + Integer.toString(j));
-                short lastAck = receiveAckPacket("Received", pathToFile);
+                int dataIndex = this.sendBase - initialSendBase;
+                ackPacket.addData(tempData[dataIndex]);
+                sendDataPacket(ackPacket, "Sender", "retransmit ** : " + Integer.toString(dataIndex));
 
-                if (dupAckIndex == lastAck)
-                    dupAckCounter++;
-                else
-                    dupAckIndex = lastAck;
-            } else
-                System.out.println("Dropped!");
+                // nextSeqNumber were increased in sendDataPacket function, so must be decreased:
+                this.nextSeqNumber -= 1;
+
+                // reset dupAckCounter:
+                dupAckCounter = 0;
+            }
         }
     }
 
