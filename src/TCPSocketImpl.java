@@ -207,7 +207,7 @@ public class TCPSocketImpl extends TCPSocket {
 
         // start timer
         Timer timer = new Timer();
-        timer.schedule(new MyTimerTask(this), 0, 5000);
+        timer.schedule(new MyTimerTask(this), 5000);
 
         while (this.sendBase - initialSendBase < tempData.length) {
 
@@ -236,7 +236,7 @@ public class TCPSocketImpl extends TCPSocket {
                 // restart timer
                 timer.cancel();
                 timer = new Timer();
-                timer.schedule(new MyTimerTask(this), 0, 5000);
+                timer.schedule(new MyTimerTask(this), 5000);
             } else {
                 // dup Ack:
                 dupAckCounter++;
@@ -268,20 +268,19 @@ public class TCPSocketImpl extends TCPSocket {
         TCPHeaderParser packetParser = receivePacket();
 
         short dataIndex = (short) (packetParser.getSequenceNumber() - initialExpectedSeqNum);
-        System.out.println("dataIndex= " + dataIndex);
-        System.out.println("dataBuffer.length " + dataBuffer.size());
-        System.out.println("data.length " + packetParser.getData().length);
+        // System.out.println("dataIndex= " + dataIndex);
+        // System.out.println("dataBuffer.length " + dataBuffer.size());
+        // System.out.println("data.length " + packetParser.getData().length);
 
         isReceived[dataIndex] = true;
         dataBuffer.set(dataIndex, packetParser.getData());
-        // dataBuffer.add(packetParser.getData());
         
 
         if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
             this.expectedSeqNumber += 1;
             
             while(isReceived[++dataIndex])
-            this.expectedSeqNumber += 1;
+                this.expectedSeqNumber += 1;
             // @TODO: this.expectedSeqNumber += size of bytes in payload.;
         }
 
@@ -296,11 +295,9 @@ public class TCPSocketImpl extends TCPSocket {
     public void receive(String pathToFile) throws Exception {
         packetLog("Receiving part", "Start");
 
+        ArrayList<byte[]> dataBuffer = new ArrayList<byte[]>(Collections.nCopies(100, new byte[100]));
         Boolean[] isReceived = new Boolean[100];
         Arrays.fill(isReceived, false);
-
-        // ArrayList<byte[]> dataBuffer = new ArrayList<byte[]>(100);
-        ArrayList<byte[]> dataBuffer = new ArrayList<byte[]>(Collections.nCopies(100, new byte[100]));
 
         short initialExpectedSeqNum = this.expectedSeqNumber;
 
