@@ -13,7 +13,18 @@ public class TCPSocketImpl extends TCPSocket {
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
     static final short WINDOW_SIZE = 5;
+    static final short INIT_CWND = 5;
+    static final short INIT_SSTHRESH = 3;
     static final int MIN_BUFFER_SIZE = 80;
+    static final int SAMPLE_RTT = 1000;
+
+    enum CongestionState{
+        SLOW_START, CONGESTION_AVOIDANCE, FAST_RECOVERY;
+    };
+
+    private short cwnd;
+    private short ssthresh;
+    private CongestionState presentState;
 
     private EnhancedDatagramSocket socket;
     private short expectedSeqNumber;
@@ -31,6 +42,11 @@ public class TCPSocketImpl extends TCPSocket {
         this.destIp = ip;
         this.destPort = port;
         this.windowSize = WINDOW_SIZE;
+
+        this.presentState = CongestionState.SLOW_START;
+        this.cwnd = INIT_CWND;
+        this.ssthresh = INIT_SSTHRESH;
+        
         this.sendBase = base;
         this.nextSeqNumber = base;
 
@@ -148,7 +164,6 @@ public class TCPSocketImpl extends TCPSocket {
         }
         // TODO: what is ACKPacket gets lost?
         sendAckPacket();
-
         System.out.println("**** Connection established! ****\n");
     }
 
@@ -334,11 +349,11 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public long getSSThreshold() {
-        throw new RuntimeException("Not implemented!");
+        return ssthresh;
     }
 
     @Override
     public long getWindowSize() {
-        throw new RuntimeException("Not implemented!");
+        return windowSize;
     }
 }
