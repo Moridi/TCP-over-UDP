@@ -9,7 +9,7 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 10000;
+    static final int TIME_OUT = 5000;
     static final int DELAY = 1000;
     static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
@@ -176,12 +176,15 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("**** Connection established! ****\n");
     }
 
-    public void sendAckPacket(String pathToFile) throws Exception {
+    public void sendAckPacket(String pathToFile, Byte testData) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         ackPacket.setAckFlag();
 
         ackPacket.setSequenceNumber(this.nextSeqNumber);
         ackPacket.setAckNumber(this.expectedSeqNumber);
+
+        // @TODO: Remove it.
+        ackPacket.addData(testData);
 
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
@@ -314,7 +317,8 @@ public class TCPSocketImpl extends TCPSocket {
 
         processPacket(timer, lastRcvdAck.getAckNumber(), initialSendBase);
 
-        System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
+        System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() +
+                " ##, with the data = " + lastRcvdAck.getData()[0]);
         packetLog("Received", pathToFile);
     }
 
@@ -336,11 +340,10 @@ public class TCPSocketImpl extends TCPSocket {
             checkWindowSizeAndSendPacket(initialSendBase);
             getAckPacket(pathToFile, time_out_timer, initialSendBase);
         }
-
         cancelTimers(time_out_timer, rtt_timer);
     }
 
-    public void receiveData(Boolean[] isReceived, ArrayList<byte[]>dataBuffer,
+    public byte receiveData(Boolean[] isReceived, ArrayList<byte[]>dataBuffer,
             short initialExpectedSeqNum, String type) throws Exception {
         TCPHeaderParser packetParser = receivePacket();
 
@@ -348,7 +351,7 @@ public class TCPSocketImpl extends TCPSocket {
 
         isReceived[dataIndex] = true;
         dataBuffer.set(dataIndex, packetParser.getData());
-        
+        packetLog(type, Integer.toString(dataIndex));
 
         if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
             this.expectedSeqNumber += 1;
@@ -358,7 +361,7 @@ public class TCPSocketImpl extends TCPSocket {
             // @TODO: this.expectedSeqNumber += size of bytes in payload.;
         }
 
-        packetLog(type, Integer.toString(dataIndex));
+        return packetParser.getData()[0];
     }
 
     public void resetSenderWindow() {
@@ -385,8 +388,8 @@ public class TCPSocketImpl extends TCPSocket {
             if (!Arrays.asList(isReceived).contains(false))
                 break;
 
-            receiveData(isReceived, dataBuffer, initialExpectedSeqNum, "Received");
-            sendAckPacket(pathToFile);
+            Byte testData = receiveData(isReceived, dataBuffer, initialExpectedSeqNum, "Received");
+            sendAckPacket(pathToFile, testData);
         }
     }
 
