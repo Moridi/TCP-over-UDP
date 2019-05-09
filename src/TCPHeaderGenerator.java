@@ -8,6 +8,7 @@ public class TCPHeaderGenerator {
     private int MIN_PAYLOAD_SIZE = 40;
     private int SEQ_NUM_SIZE = 2;
     private int ACK_NUM_SIZE = 2;
+    private int RWND_SIZE = 2;
 
     private byte buffer[];
     private int port;
@@ -18,6 +19,7 @@ public class TCPHeaderGenerator {
     private int flagIndex = 0;
     private int seqNumIndex = 1;
     private int ackNumIndex = 3;
+    private int rwndIndex = 5;
 
     public TCPHeaderGenerator(String _ip, int _port) {
         this.port = _port;
@@ -43,25 +45,24 @@ public class TCPHeaderGenerator {
         for (int i = 0; i < ACK_NUM_SIZE; i++)
             buffer[ackNumIndex + i] = bytes[i];
     }
+
+    public void setRwnd(short rwnd) {        
+        ByteBuffer dbuf = ByteBuffer.allocate(RWND_SIZE);
+        dbuf.putShort(rwnd);
+        byte[] bytes = dbuf.array();
+
+        for (int i = 0; i < RWND_SIZE; i++)
+            buffer[rwndIndex + i] = bytes[i];
+    }
     
     public void setSynFlag() {
         byte setSyn = 0x01;
         buffer[flagIndex] = (byte)(buffer[flagIndex] | setSyn);
     }
 
-    public void resetSynFlag() {
-        byte resetSyn = (byte)(0xFE);
-        buffer[flagIndex] = (byte)(buffer[flagIndex] & resetSyn);
-    }
-
     public void setAckFlag() {
         byte setAck = 0x02;
         buffer[flagIndex] = (byte)(buffer[flagIndex] | setAck);
-    }
-
-    public void resetAckFlag() {
-        byte resetAck = (byte)(0xFD);
-        buffer[flagIndex] = (byte)(buffer[flagIndex] | resetAck);
     }
 
     public DatagramPacket getPacket() throws Exception {
