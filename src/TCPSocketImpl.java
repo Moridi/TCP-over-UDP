@@ -215,11 +215,12 @@ public class TCPSocketImpl extends TCPSocket {
         return receivedPacket;
     }
 
-    public void intializeSocket(Timer time_out_timer, Timer rtt_timer) {
+    public void intializeSocket(Timer time_out_timer, Timer rtt_timer) throws Exception {
         packetLog("Sending part", "Start");
         this.socket.setLossRate(LOSS_RATE);
         this.socket.setDelayInMilliseconds(DELAY);
         this.sendBase = this.nextSeqNumber;
+        this.socket.setSoTimeout(ACK_TIME_OUT);
         
         // start timer
         time_out_timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
@@ -232,6 +233,7 @@ public class TCPSocketImpl extends TCPSocket {
         timer.cancel();
         timer = new Timer();
         timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
+        this.dupAckCounter = 0;
     }
 
     public void checkWindowSizeAndSendPacket(short initialSendBase) throws Exception {
@@ -246,26 +248,26 @@ public class TCPSocketImpl extends TCPSocket {
             ackPacket.addData(tempData[dataIndex]);
             sendDataPacket(ackPacket, "Sender", "** : " + Integer.toString(dataIndex));
         }
-        this.socket.setSoTimeout(ACK_TIME_OUT);
     }
 
     public void dupAckHandler(short initialSendBase) throws Exception {
         // reTransmit sendBase
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
 
-        int dataIndex = this.sendBase - initialSendBase;
         short tempNextSeqNum = this.nextSeqNumber;
-        this.nextSeqNumber = this.sendBase;
-
-        ackPacket.addData(tempData[dataIndex]);
-        sendDataPacket(ackPacket, "Sender", "retransmit ** : " +
-                Integer.toString(dataIndex));
-
-        // nextSeqNumber were increased in sendDataPacket function, so must be decreased:
-        this.nextSeqNumber = tempNextSeqNum;
+        
+        // @TODO: Check the this.nextSeqNumber++ validity
+        for (this.nextSeqNumber = this.sendBase;
+        this.nextSeqNumber < tempNextSeqNum; this.nextSeqNumber++) {
+            
+            int dataIndex = this.nextSeqNumber - initialSendBase;
+            ackPacket.addData(tempData[dataIndex]);
+            sendDataPacket(ackPacket, "Sender", "retransmit ** : " +
+                    Integer.toString(dataIndex));
+        }
     }
 
-    public void processCommand(Timer timer, short lastRcvdAck,
+    public void processPacket(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
         // @TODO: check when (lastRcvdAck == this.sendBase), is it dupACK or not ?!
         if (lastRcvdAck > this.sendBase)
@@ -274,6 +276,8 @@ public class TCPSocketImpl extends TCPSocket {
             this.dupAckCounter++;
 
         if (this.dupAckCounter >= 3) {
+            System.out.println("## Three dup ack received! ##");
+
             dupAckHandler(initialSendBase);
             this.dupAckCounter = 0;
         }
@@ -289,7 +293,7 @@ public class TCPSocketImpl extends TCPSocket {
             return;
         }
 
-        processCommand(timer, lastRcvdAck.getAckNumber(), initialSendBase);
+        processPacket(timer, lastRcvdAck.getAckNumber(), initialSendBase);
 
         System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
         packetLog("Received", pathToFile);
@@ -339,7 +343,9 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void resetSenderWindow() {
+        System.out.println("## Time-out ##");
         this.nextSeqNumber = this.sendBase;
+        dupAckCounter = 0;
     }
 
     public void setNewWindowSize() {
