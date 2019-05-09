@@ -276,15 +276,15 @@ public class TCPSocketImpl extends TCPSocket {
     public void slowStartWindowHandler(short lastRcvdAck) {
         this.cwnd += MSS * (lastRcvdAck - this.sendBase);
         this.windowSize = (short)Math.min(rwnd, cwnd);
+
+        System.out.println("New window size: " + this.windowSize);
     }
 
     public void slowStartHandler(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
         if (lastRcvdAck > this.sendBase) {
-            //System.out.println(">>>>>>>>>> lastRcvdAck > this.sendBase");
             slowStartWindowHandler(lastRcvdAck);
             setNewSendBase(timer, lastRcvdAck);
-            System.out.println("New window size: " + this.windowSize);
         }
         else
             this.dupAckCounter++;
@@ -321,22 +321,20 @@ public class TCPSocketImpl extends TCPSocket {
             return;
         }
 
-        processPacket(timer, lastRcvdAck.getAckNumber(), initialSendBase);
-
         System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() +
                 " ##, with the data = " + lastRcvdAck.getData()[0]);
         packetLog("Received", pathToFile);        
+        
+        processPacket(timer, lastRcvdAck.getAckNumber(), initialSendBase);
     }
 
     public void cancelTimers(Timer time_out_timer) {
         time_out_timer.cancel();
     }
 
-    private Timer time_out_timer;
-    
     @Override
     public void send(String pathToFile) throws Exception {
-        time_out_timer = new Timer();
+        Timer time_out_timer = new Timer();
 
         intializeSocket(time_out_timer);
 
@@ -371,12 +369,15 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void resetSenderWindow() {
-        System.out.println("## Time-out ##");
         this.nextSeqNumber = this.sendBase;
         dupAckCounter = 0;
-        // this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
-        // this.cwnd = 1 * MSS;
-        // this.presentState = CongestionState.SLOW_START;
+        this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
+        this.cwnd = 1 * MSS;
+        this.presentState = CongestionState.SLOW_START;
+        
+        this.windowSize = (short)Math.min(this.cwnd, this.rwnd);
+
+        System.out.println("## Time-out ## " + "New window size: " + this.windowSize);
     }
 
     @Override
