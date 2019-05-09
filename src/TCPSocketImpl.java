@@ -9,11 +9,11 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 5000;
+    static final int TIME_OUT = 10000;
     static final int DELAY = 1000;
     static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
-    static final double LOSS_RATE = 0.5;
+    static final double LOSS_RATE = 0.1;
 
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
@@ -33,6 +33,7 @@ public class TCPSocketImpl extends TCPSocket {
     private short ssthresh;
     private CongestionState presentState;
     private int dupAckCounter;
+    private short mostRcvdAck;
 
     private EnhancedDatagramSocket socket;
     private short expectedSeqNumber;
@@ -238,6 +239,7 @@ public class TCPSocketImpl extends TCPSocket {
         timer = new Timer();
         timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
         this.dupAckCounter = 0;
+        this.mostRcvdAck = -1;
     }
 
     public void checkWindowSizeAndSendPacket(short initialSendBase) throws Exception {
@@ -259,18 +261,17 @@ public class TCPSocketImpl extends TCPSocket {
 
     public void dupAckHandler(short initialSendBase) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
-
-        short tempNextSeqNum = this.nextSeqNumber;
         
-        // @TODO: Check the this.nextSeqNumber++ validity
-        for (this.nextSeqNumber = this.sendBase;
-                this.nextSeqNumber < tempNextSeqNum; this.nextSeqNumber++) {
-            
-            int dataIndex = this.nextSeqNumber - initialSendBase;
-            ackPacket.addData(tempData[dataIndex]);
-            sendDataPacket(ackPacket, "Sender", "retransmit ** : " +
-                    Integer.toString(dataIndex));
-        }
+        int dataIndex = this.mostRcvdAck - initialSendBase;
+        ackPacket.addData(tempData[dataIndex]);
+
+        ackPacket.setSequenceNumber(this.mostRcvdAck);
+        DatagramPacket sendingPacket = ackPacket.getPacket();
+
+        this.socket.send(sendingPacket);
+
+        System.out.println("Sender, retransmit ** : " +
+                Integer.toString(tempData[dataIndex]));
     }
 
     public void slowStartWindowHandler(short lastRcvdAck) {
@@ -285,15 +286,19 @@ public class TCPSocketImpl extends TCPSocket {
         if (lastRcvdAck > this.sendBase) {
             slowStartWindowHandler(lastRcvdAck);
             setNewSendBase(timer, lastRcvdAck);
+            this.mostRcvdAck = lastRcvdAck;
         }
-        else
+        else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
             this.dupAckCounter++;
+            this.mostRcvdAck = lastRcvdAck;
+        }
 
         if (this.dupAckCounter >= 3) {
             System.out.println("## Three dup ack received! ##");
 
             dupAckHandler(initialSendBase);
             this.dupAckCounter = 0;
+            this.mostRcvdAck = -1;
             // @TODO: Change the present state 
         }
     }
@@ -371,6 +376,7 @@ public class TCPSocketImpl extends TCPSocket {
     public void resetSenderWindow() {
         this.nextSeqNumber = this.sendBase;
         dupAckCounter = 0;
+        this.mostRcvdAck = -1;
         this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
         this.cwnd = 1 * MSS;
         this.presentState = CongestionState.SLOW_START;
