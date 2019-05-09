@@ -9,11 +9,11 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 1000;
-    static final int DELAY = 0;
+    static final int TIME_OUT = 5000;
+    static final int DELAY = 1000;
     static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
-    static final double LOSS_RATE = 0;
+    static final double LOSS_RATE = 0.5;
 
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
@@ -234,9 +234,9 @@ public class TCPSocketImpl extends TCPSocket {
     public void setNewSendBase(Timer timer, short lastRcvdAck) {
         this.sendBase = lastRcvdAck;
         // restart timer
-        // timer.cancel();
-        // timer = new Timer();
-        // timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
+        timer.cancel();
+        timer = new Timer();
+        timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
         this.dupAckCounter = 0;
     }
 
@@ -372,8 +372,8 @@ public class TCPSocketImpl extends TCPSocket {
 
     public void resetSenderWindow() {
         System.out.println("## Time-out ##");
-        // this.nextSeqNumber = this.sendBase;
-        // dupAckCounter = 0;
+        this.nextSeqNumber = this.sendBase;
+        dupAckCounter = 0;
         // this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
         // this.cwnd = 1 * MSS;
         // this.presentState = CongestionState.SLOW_START;
