@@ -9,16 +9,17 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 5000;
+    static final int TIME_OUT = 10000;
     static final int DELAY = 1000;
     static final int ACK_TIME_OUT = 250;
-    static final double LOSS_RATE = 0.5;
+    static final int MSS = 1;
+    static final double LOSS_RATE = 0.1;
 
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
     static final short INIT_RWND = 15;
     static final short INIT_CWND = 5;
-    static final short INIT_SSTHRESH = 3;
+    static final short INIT_SSTHRESH = 5;
     
     static final int MIN_BUFFER_SIZE = 80;
     static final int SAMPLE_RTT = 1000;
@@ -50,9 +51,9 @@ public class TCPSocketImpl extends TCPSocket {
         this.destPort = port;
         
         this.presentState = CongestionState.SLOW_START;
-        this.cwnd = INIT_CWND;
-        this.ssthresh = INIT_SSTHRESH;
-        this.rwnd = INIT_RWND;
+        this.cwnd = INIT_CWND * MSS;
+        this.ssthresh = INIT_SSTHRESH * MSS;
+        this.rwnd = INIT_RWND * MSS;
         
         this.windowSize = (short)Math.min(rwnd, cwnd);
         this.sendBase = base;
@@ -224,7 +225,6 @@ public class TCPSocketImpl extends TCPSocket {
         
         // start timer
         time_out_timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
-        rtt_timer.schedule(new RttTimer(this), 0, SAMPLE_RTT);
     }
 
     public void setNewSendBase(Timer timer, short lastRcvdAck) {
@@ -251,14 +251,13 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void dupAckHandler(short initialSendBase) throws Exception {
-        // reTransmit sendBase
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
 
         short tempNextSeqNum = this.nextSeqNumber;
         
         // @TODO: Check the this.nextSeqNumber++ validity
         for (this.nextSeqNumber = this.sendBase;
-        this.nextSeqNumber < tempNextSeqNum; this.nextSeqNumber++) {
+                this.nextSeqNumber < tempNextSeqNum; this.nextSeqNumber++) {
             
             int dataIndex = this.nextSeqNumber - initialSendBase;
             ackPacket.addData(tempData[dataIndex]);
@@ -267,11 +266,17 @@ public class TCPSocketImpl extends TCPSocket {
         }
     }
 
-    public void processPacket(Timer timer, short lastRcvdAck,
+    public void slowStartWindowHandler(short lastRcvdAck) {
+        this.cwnd += MSS * (lastRcvdAck - this.sendBase);
+        this.windowSize = (short)Math.min(rwnd, cwnd);
+    }
+
+    public void slowStartHandler(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
-        // @TODO: check when (lastRcvdAck == this.sendBase), is it dupACK or not ?!
-        if (lastRcvdAck > this.sendBase)
+        if (lastRcvdAck > this.sendBase) {
+            slowStartWindowHandler(lastRcvdAck);
             setNewSendBase(timer, lastRcvdAck);
+        }
         else
             this.dupAckCounter++;
 
@@ -280,6 +285,20 @@ public class TCPSocketImpl extends TCPSocket {
 
             dupAckHandler(initialSendBase);
             this.dupAckCounter = 0;
+            // @TODO: Change the present state 
+        }
+    }
+
+    public void processPacket(Timer timer, short lastRcvdAck,
+            short initialSendBase) throws Exception {
+        // @TODO: check when (lastRcvdAck == this.sendBase), is it dupACK or not ?!
+        switch (this.presentState) {
+            case SLOW_START:
+                slowStartHandler(timer, lastRcvdAck, initialSendBase);
+                break;
+        
+            default:
+                break;
         }
     }
 
@@ -345,11 +364,10 @@ public class TCPSocketImpl extends TCPSocket {
     public void resetSenderWindow() {
         System.out.println("## Time-out ##");
         this.nextSeqNumber = this.sendBase;
+        this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
+        this.cwnd = 1 * MSS;
         dupAckCounter = 0;
-    }
-
-    public void setNewWindowSize() {
-        this.windowSize = (short)Math.min(rwnd, cwnd);
+        this.presentState = CongestionState.SLOW_START;
     }
 
     @Override
