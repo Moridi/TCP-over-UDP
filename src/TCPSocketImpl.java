@@ -31,6 +31,7 @@ public class TCPSocketImpl extends TCPSocket {
     private short rwnd;
     private short ssthresh;
     private CongestionState presentState;
+    private int dupAckCounter;
 
     private EnhancedDatagramSocket socket;
     private short expectedSeqNumber;
@@ -264,38 +265,34 @@ public class TCPSocketImpl extends TCPSocket {
         this.nextSeqNumber = tempNextSeqNum;
     }
 
-    public int processCommand(Timer timer, short lastRcvdAck,
-            int dupAckCounter, short initialSendBase) throws Exception {
+    public void processCommand(Timer timer, short lastRcvdAck,
+            short initialSendBase) throws Exception {
         // @TODO: check when (lastRcvdAck == this.sendBase), is it dupACK or not ?!
         if (lastRcvdAck > this.sendBase)
             setNewSendBase(timer, lastRcvdAck);
         else
-            dupAckCounter++;
+            this.dupAckCounter++;
 
-        if (dupAckCounter >= 3) {
+        if (this.dupAckCounter >= 3) {
             dupAckHandler(initialSendBase);
-            dupAckCounter = 0;
+            this.dupAckCounter = 0;
         }
-        return dupAckCounter;
     }
 
-    public int getAckPacket(String pathToFile, int dupAckCounter,
-            Timer timer, short initialSendBase) throws Exception {
+    public void getAckPacket(String pathToFile, Timer timer,
+            short initialSendBase) throws Exception {
         TCPHeaderParser lastRcvdAck;
 
         try {
             lastRcvdAck = receiveAckPacket();
         } catch (SocketTimeoutException ex) {
-            return dupAckCounter;
+            return;
         }
 
-        dupAckCounter = processCommand(timer, lastRcvdAck.getAckNumber(),
-                dupAckCounter, initialSendBase);
+        processCommand(timer, lastRcvdAck.getAckNumber(), initialSendBase);
 
         System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
         packetLog("Received", pathToFile);
-
-        return dupAckCounter;
     }
 
     public void cancelTimers(Timer time_out_timer, Timer rtt_timer) {
@@ -310,13 +307,11 @@ public class TCPSocketImpl extends TCPSocket {
 
         intializeSocket(time_out_timer, rtt_timer);
 
-        int dupAckCounter = 0;
         short initialSendBase = this.sendBase;
 
         while (this.sendBase - initialSendBase < tempData.length) {   
             checkWindowSizeAndSendPacket(initialSendBase);
-            dupAckCounter = getAckPacket(pathToFile, dupAckCounter,
-                    time_out_timer, initialSendBase);
+            getAckPacket(pathToFile, time_out_timer, initialSendBase);
         }
 
         cancelTimers(time_out_timer, rtt_timer);
