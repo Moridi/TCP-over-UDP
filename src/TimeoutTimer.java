@@ -11,8 +11,13 @@ class TimeoutTimer extends TimerTask {
     }
 
     public void run() {
-      if (this.timeOut)
-        this.tcpSocket.resetSenderWindow();
+      if (this.timeOut) {
+        try {
+          this.tcpSocket.resetSenderWindow();
+        } catch (Exception e) {
+          return;
+        }
+      }
 
       this.timeOut = true;
     }

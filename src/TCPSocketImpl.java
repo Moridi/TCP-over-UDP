@@ -9,7 +9,7 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 5000;
+    static final int TIME_OUT = 8000;
     static final int DELAY = 1000;
     static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
@@ -243,13 +243,16 @@ public class TCPSocketImpl extends TCPSocket {
         }
     }
 
-    public void dupAckHandler() throws Exception {
+    public void dupAckHandler(int lostPacket) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         
-        int dataIndex = this.mostRcvdAck - this.initialSendBase;
-        ackPacket.addData(tempData[dataIndex]);
+        int dataIndex = lostPacket - this.initialSendBase;
 
-        ackPacket.setSequenceNumber(this.mostRcvdAck);
+        if (dataIndex >= tempData.length || dataIndex < 0)
+            return;
+
+        ackPacket.addData(tempData[dataIndex]);
+        ackPacket.setSequenceNumber((short)lostPacket);
         DatagramPacket sendingPacket = ackPacket.getPacket();
 
         this.socket.send(sendingPacket);
@@ -301,20 +304,23 @@ public class TCPSocketImpl extends TCPSocket {
         this.ssthresh = (short)Math.ceil(this.cwnd / 2);
         this.cwnd = (short)(this.ssthresh + 3);
         
-        dupAckHandler();
+        dupAckHandler(this.mostRcvdAck);
     }
     
     public void slowStartHandler(Timer timer, short lastRcvdAck) throws Exception {
         
         if (lastRcvdAck > this.sendBase)
-        slowStartWindowHandler(timer, lastRcvdAck);
+            slowStartWindowHandler(timer, lastRcvdAck);
         else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
             this.dupAckCounter++;
             this.mostRcvdAck = lastRcvdAck;
         }
         
         if (this.dupAckCounter >= 3)
-        changeToFastRecovery(timer, lastRcvdAck);
+            changeToFastRecovery(timer, lastRcvdAck);
+        else if (this.cwnd >= this.ssthresh)
+            this.presentState = CongestionState.CONGESTION_AVOIDANCE;
+        
     }
     
     public void fastRecoveryHandler(Timer timer, short lastRcvdAck) throws Exception {
@@ -340,8 +346,6 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void processPacket(Timer timer, short lastRcvdAck) throws Exception {
-
-        System.out.println("presentState: " + this.presentState);
         switch (this.presentState) {
             case SLOW_START:
                 slowStartHandler(timer, lastRcvdAck);
@@ -358,6 +362,8 @@ public class TCPSocketImpl extends TCPSocket {
             default:
                 break;
         }
+
+        System.out.println("presentState: " + this.presentState);
     }
 
     public void getAckPacket(String pathToFile, Timer timer) throws Exception {
@@ -414,7 +420,7 @@ public class TCPSocketImpl extends TCPSocket {
         return packetParser.getData()[0];
     }
 
-    public void resetSenderWindow() {
+    public void resetSenderWindow() throws Exception {
         this.nextSeqNumber = this.sendBase;
         dupAckCounter = 0;
         this.mostRcvdAck = -1;
@@ -422,8 +428,9 @@ public class TCPSocketImpl extends TCPSocket {
         this.cwnd = 1 * MSS;
         this.presentState = CongestionState.SLOW_START;
         this.windowSize = (short)Math.min(this.cwnd, this.rwnd);
-
+        
         System.out.println("## Time-out ## " + "New window size: " + this.windowSize);
+        dupAckHandler(this.sendBase);
     }
 
     @Override
