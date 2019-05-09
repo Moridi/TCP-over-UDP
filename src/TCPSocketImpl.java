@@ -9,17 +9,17 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 5000;
-    static final int DELAY = 1000;
+    static final int TIME_OUT = 1000;
+    static final int DELAY = 0;
     static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
-    static final double LOSS_RATE = 0.1;
+    static final double LOSS_RATE = 0;
 
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
-    static final short INIT_RWND = 15;
-    static final short INIT_CWND = 5;
-    static final short INIT_SSTHRESH = 5;
+    static final short INIT_RWND = 100;
+    static final short INIT_CWND = 4;
+    static final short INIT_SSTHRESH = 2;
     
     static final int MIN_BUFFER_SIZE = 80;
     static final int SAMPLE_RTT = 1000;
@@ -59,7 +59,7 @@ public class TCPSocketImpl extends TCPSocket {
         this.sendBase = base;
         this.nextSeqNumber = base;
 
-        this.tempData = new byte[2 * INIT_CWND];
+        this.tempData = new byte[14];
         for (int i = 0; i < this.tempData.length; ++i) {
             tempData[i] = (byte) i;
         }
@@ -73,10 +73,10 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void packetLog(String type, String name) {
-        System.out.println(type + ": " + name +
-                ", ExpSeqNum: " + Integer.toString(this.expectedSeqNumber) +
-                ", Send base: " + Integer.toString(this.sendBase) +
-                ", NextSeq: " + Integer.toString(this.nextSeqNumber));
+        //System.out.println(type + ": " + name +
+                // ", ExpSeqNum: " + Integer.toString(this.expectedSeqNumber) +
+                // ", Send base: " + Integer.toString(this.sendBase) +
+                // ", NextSeq: " + Integer.toString(this.nextSeqNumber));
     }
 
     public void sendPacket(String name, TCPHeaderGenerator packet)
@@ -173,7 +173,7 @@ public class TCPSocketImpl extends TCPSocket {
         }
         // TODO: what is ACKPacket gets lost?
         sendAckPacket();
-        System.out.println("**** Connection established! ****\n");
+        //System.out.println("**** Connection established! ****\n");
     }
 
     public void sendAckPacket(String pathToFile, Byte testData) throws Exception {
@@ -189,7 +189,8 @@ public class TCPSocketImpl extends TCPSocket {
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
 
-        System.out.println("##\t Sending AckNum: " + this.expectedSeqNumber);
+        System.out.println("## Sending AckNum: " + this.expectedSeqNumber
+                + ", Data: " + testData);
         packetLog("Sender", pathToFile);
         
         this.nextSeqNumber += 1;
@@ -219,7 +220,7 @@ public class TCPSocketImpl extends TCPSocket {
         return receivedPacket;
     }
 
-    public void intializeSocket(Timer time_out_timer, Timer rtt_timer) throws Exception {
+    public void intializeSocket(Timer time_out_timer) throws Exception {
         packetLog("Sending part", "Start");
         this.socket.setLossRate(LOSS_RATE);
         this.socket.setDelayInMilliseconds(DELAY);
@@ -233,21 +234,24 @@ public class TCPSocketImpl extends TCPSocket {
     public void setNewSendBase(Timer timer, short lastRcvdAck) {
         this.sendBase = lastRcvdAck;
         // restart timer
-        timer.cancel();
-        timer = new Timer();
-        timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
+        // timer.cancel();
+        // timer = new Timer();
+        // timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
         this.dupAckCounter = 0;
     }
 
     public void checkWindowSizeAndSendPacket(short initialSendBase) throws Exception {
         while (this.nextSeqNumber < this.sendBase + this.windowSize) {
+            
             int dataIndex = this.nextSeqNumber - initialSendBase;
             if (dataIndex >= tempData.length)
                 break;
-
-            TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(
+                
+                TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(
                     this.destIp, this.destPort);
-
+                    
+            System.out.println("Window Size: " + this.windowSize +
+                    " Sending Data: " + tempData[dataIndex]);
             ackPacket.addData(tempData[dataIndex]);
             sendDataPacket(ackPacket, "Sender", "** : " + Integer.toString(dataIndex));
         }
@@ -277,8 +281,10 @@ public class TCPSocketImpl extends TCPSocket {
     public void slowStartHandler(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
         if (lastRcvdAck > this.sendBase) {
+            //System.out.println(">>>>>>>>>> lastRcvdAck > this.sendBase");
             slowStartWindowHandler(lastRcvdAck);
             setNewSendBase(timer, lastRcvdAck);
+            System.out.println("New window size: " + this.windowSize);
         }
         else
             this.dupAckCounter++;
@@ -319,28 +325,28 @@ public class TCPSocketImpl extends TCPSocket {
 
         System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() +
                 " ##, with the data = " + lastRcvdAck.getData()[0]);
-        packetLog("Received", pathToFile);
+        packetLog("Received", pathToFile);        
     }
 
-    public void cancelTimers(Timer time_out_timer, Timer rtt_timer) {
+    public void cancelTimers(Timer time_out_timer) {
         time_out_timer.cancel();
-        rtt_timer.cancel();
     }
 
+    private Timer time_out_timer;
+    
     @Override
     public void send(String pathToFile) throws Exception {
-        Timer time_out_timer = new Timer();
-        Timer rtt_timer = new Timer();
+        time_out_timer = new Timer();
 
-        intializeSocket(time_out_timer, rtt_timer);
+        intializeSocket(time_out_timer);
 
         short initialSendBase = this.sendBase;
 
-        while (this.sendBase - initialSendBase < tempData.length) {   
+        while (this.sendBase - initialSendBase < tempData.length) {  
             checkWindowSizeAndSendPacket(initialSendBase);
             getAckPacket(pathToFile, time_out_timer, initialSendBase);
         }
-        cancelTimers(time_out_timer, rtt_timer);
+        cancelTimers(time_out_timer);
     }
 
     public byte receiveData(Boolean[] isReceived, ArrayList<byte[]>dataBuffer,
@@ -366,11 +372,11 @@ public class TCPSocketImpl extends TCPSocket {
 
     public void resetSenderWindow() {
         System.out.println("## Time-out ##");
-        this.nextSeqNumber = this.sendBase;
-        this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
-        this.cwnd = 1 * MSS;
-        dupAckCounter = 0;
-        this.presentState = CongestionState.SLOW_START;
+        // this.nextSeqNumber = this.sendBase;
+        // dupAckCounter = 0;
+        // this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
+        // this.cwnd = 1 * MSS;
+        // this.presentState = CongestionState.SLOW_START;
     }
 
     @Override
@@ -388,7 +394,8 @@ public class TCPSocketImpl extends TCPSocket {
             if (!Arrays.asList(isReceived).contains(false))
                 break;
 
-            Byte testData = receiveData(isReceived, dataBuffer, initialExpectedSeqNum, "Received");
+            Byte testData = receiveData(isReceived,
+                    dataBuffer, initialExpectedSeqNum, "Received");
             sendAckPacket(pathToFile, testData);
         }
     }
