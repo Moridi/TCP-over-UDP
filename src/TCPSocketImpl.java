@@ -72,7 +72,6 @@ public class TCPSocketImpl extends TCPSocket {
         this.rwnd = receiverBufferSize;
         this.emptyBuffer = receiverBufferSize;
         
-        System.out.println("rwnd, cwnd: " + Integer.toString(rwnd) + " , " + Integer.toString(cwnd));
         this.windowSize = (short)Math.min(rwnd, cwnd);
         this.sendBase = base;
         this.nextSeqNumber = base;
@@ -220,7 +219,7 @@ public class TCPSocketImpl extends TCPSocket {
         return receivedPacket;
     }
 
-    public void intializeSocket(Timer time_out_timer) throws Exception {
+    public void initializeSocket(Timer time_out_timer) throws Exception {
         this.socket.setLossRate(LOSS_RATE);
         this.socket.setDelayInMilliseconds(DELAY);
         this.sendBase = this.nextSeqNumber;
@@ -279,8 +278,6 @@ public class TCPSocketImpl extends TCPSocket {
 
     public void slowStartWindowHandler(Timer timer, short lastRcvdAck) {
         this.cwnd += MSS * (lastRcvdAck - this.sendBase);
-
-        System.out.println("rwnd, cwnd: " + Integer.toString(rwnd) + " , " + Integer.toString(cwnd));
         this.windowSize = (short)Math.min(rwnd, cwnd);
 
         System.out.println("New window size: " + this.windowSize);
@@ -289,8 +286,6 @@ public class TCPSocketImpl extends TCPSocket {
 
     public void fastRecoveryWindowHandler() {
         this.cwnd += MSS;
-
-        System.out.println("rwnd, cwnd: " + Integer.toString(rwnd) + " , " + Integer.toString(cwnd));
         this.windowSize = (short)Math.min(rwnd, cwnd);
 
         System.out.println("New window size: " + this.windowSize);
@@ -300,8 +295,6 @@ public class TCPSocketImpl extends TCPSocket {
 
         // @TODO: Check it out.
         this.cwnd += (Math.ceil(MSS * (MSS / this.cwnd))) * (lastRcvdAck - this.sendBase);
-        
-        System.out.println("rwnd, cwnd: " + Integer.toString(rwnd) + " , " + Integer.toString(cwnd));        
         this.windowSize = (short)Math.min(rwnd, cwnd);
 
         System.out.println("New window size: " + this.windowSize);
@@ -412,7 +405,7 @@ public class TCPSocketImpl extends TCPSocket {
     public void send(String pathToFile) throws Exception {
         Timer time_out_timer = new Timer();
 
-        intializeSocket(time_out_timer);
+        initializeSocket(time_out_timer);
 
         while (this.sendBase - this.initialSendBase < tempData.length) {  
             sendWindowPackets();
@@ -430,7 +423,6 @@ public class TCPSocketImpl extends TCPSocket {
 
         this.emptyBuffer = tempRwnd;
     }
-
 
     public byte addDataToBuffer(TCPHeaderParser packetParser,
             short initialExpectedSeqNum) throws Exception {
@@ -452,10 +444,11 @@ public class TCPSocketImpl extends TCPSocket {
         return packetParser.getData()[0];
     }
 
-    public byte receiveData(short initialExpectedSeqNum) throws Exception {
+    public byte receiveData(Timer timer, short initialExpectedSeqNum) throws Exception {
         TCPHeaderParser packetParser;
         try {
             packetParser = receivePacket();
+            restartRwndTimer(timer);
             return addDataToBuffer(packetParser, initialExpectedSeqNum);
         } catch (Exception e) {
             setRwnd(isReceived);
@@ -471,34 +464,49 @@ public class TCPSocketImpl extends TCPSocket {
         this.cwnd = 1 * MSS;
         this.presentState = CongestionState.SLOW_START;
 
-        System.out.println("rwnd, cwnd: " + Integer.toString(rwnd) + " , " + Integer.toString(cwnd));
         this.windowSize = (short)Math.min(this.cwnd, this.rwnd);
         
         System.out.println("## Time-out ## " + "New window size: " + this.windowSize);
         dupAckHandler(this.sendBase);
     }
 
-    public void initializeReceiverSide() throws Exception {
+    public void initializeReceiverSide(Timer timer) throws Exception {
         dataBuffer = new ArrayList<byte[]>(Collections.nCopies(this.receiverBufferSize,
                 new byte[this.receiverBufferSize]));
         isReceived = new Boolean[this.receiverBufferSize];
         Arrays.fill(isReceived, false);
+
+        // Start timer
+        timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
+    }
+    
+    public void restartRwndTimer(Timer timer) {
+        // Restart timer
+        timer.cancel();
+        timer = new Timer();
+        timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
+    }
+
+    // It's just for notifying the sender when the buffer gets empty
+    public void sendSimpleAck() throws Exception {
+        System.out.println("Send notifier to the sender");
+        sendAckPacket("Notifier", (byte)0);
     }
 
     @Override
     public void receive(String pathToFile) throws Exception {
 
-        initializeReceiverSide();
+        Timer rwndTimer = new Timer();
+        initializeReceiverSide(rwndTimer);
         Byte testData = 0;
 
         short initialExpectedSeqNum = this.expectedSeqNumber;
 
         while (true) {
             if (Arrays.asList(isReceived).contains(false)) {
-                testData = receiveData(initialExpectedSeqNum);
+                testData = receiveData(rwndTimer, initialExpectedSeqNum);
                 sendAckPacket(pathToFile, testData);
             }
-                // It's out of the if statement to notify the sender when the buffer gets empty
         }
     }
 
