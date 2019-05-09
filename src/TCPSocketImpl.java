@@ -9,11 +9,11 @@ import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 10000;
+    static final int TIME_OUT = 5000;
     static final int DELAY = 1000;
     static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
-    static final double LOSS_RATE = 0.1;
+    static final double LOSS_RATE = 0.2;
 
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
@@ -160,7 +160,7 @@ public class TCPSocketImpl extends TCPSocket {
         }
         // TODO: what is ACKPacket gets lost?
         sendAckPacket();
-        //System.out.println("**** Connection established! ****\n");
+        System.out.println("**** Connection established! ****\n");
     }
 
     public void sendAckPacket(String pathToFile, Byte testData) throws Exception {
@@ -265,24 +265,41 @@ public class TCPSocketImpl extends TCPSocket {
         setNewSendBase(timer, lastRcvdAck);
     }
 
+    public void fastRecoveryWindowHandler() {
+        this.cwnd += MSS;
+        this.windowSize = (short)Math.min(rwnd, cwnd);
+
+        System.out.println("New window size: " + this.windowSize);
+    }
+
     public void fastRecoveryHandler(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
         if (lastRcvdAck > this.sendBase) {
-            // @TODO: Chagne it to Congestion Avoidance
             this.presentState = CongestionState.SLOW_START;
             this.dupAckCounter = 0;
             this.mostRcvdAck = lastRcvdAck;
+            // @TODO: Chagne it to Congestion Avoidance
             slowStartHandler(timer, lastRcvdAck, initialSendBase);
+            return;
         }
-        else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
-            dupAckHandler(initialSendBase);
-            this.mostRcvdAck = lastRcvdAck;
-        } else
-            System.out.println("Something went wrong!");
+
+        fastRecoveryWindowHandler();
     }
     
+    public void slowStartToFastRecovery(Timer timer, short lastRcvdAck,
+            short initialSendBase) throws Exception {
+
+        this.presentState = CongestionState.FAST_RECOVERY;
+        
+        this.ssthresh = (short)Math.ceil(this.cwnd / 2);
+        this.cwnd = (short)(this.ssthresh + 3);
+
+        dupAckHandler(initialSendBase);
+    }
+
     public void slowStartHandler(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
+
         if (lastRcvdAck > this.sendBase)
             slowStartWindowHandler(timer, lastRcvdAck);
         else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
@@ -290,12 +307,9 @@ public class TCPSocketImpl extends TCPSocket {
             this.mostRcvdAck = lastRcvdAck;
         }
 
-        if (this.dupAckCounter >= 3) {
-            this.presentState = CongestionState.FAST_RECOVERY;
-            fastRecoveryHandler(timer, lastRcvdAck, initialSendBase);
-        }
+        if (this.dupAckCounter >= 3)
+            slowStartToFastRecovery(timer, lastRcvdAck, initialSendBase);
     }
-
 
     public void processPacket(Timer timer, short lastRcvdAck,
             short initialSendBase) throws Exception {
