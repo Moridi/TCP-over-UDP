@@ -44,6 +44,7 @@ public class TCPSocketImpl extends TCPSocket {
     private String destIp;
     private int destPort;
 
+    private short initialSendBase;
     private short windowSize;
     private byte tempData[];
 
@@ -211,13 +212,13 @@ public class TCPSocketImpl extends TCPSocket {
         this.socket.setSoTimeout(ACK_TIME_OUT);
         this.mostRcvdAck = -1;
         
-        // start timer
+        // Start timer
         time_out_timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
     }
 
     public void setNewSendBase(Timer timer, short lastRcvdAck) {
         this.sendBase = lastRcvdAck;
-        // restart timer
+        // Restart timer
         timer.cancel();
         timer = new Timer();
         timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
@@ -225,10 +226,10 @@ public class TCPSocketImpl extends TCPSocket {
         this.mostRcvdAck = lastRcvdAck;
     }
 
-    public void checkWindowSizeAndSendPacket(short initialSendBase) throws Exception {
+    public void checkWindowSizeAndSendPacket() throws Exception {
         while (this.nextSeqNumber < this.sendBase + this.windowSize) {
             
-            int dataIndex = this.nextSeqNumber - initialSendBase;
+            int dataIndex = this.nextSeqNumber - this.initialSendBase;
             if (dataIndex >= tempData.length)
                 break;
                 
@@ -242,10 +243,10 @@ public class TCPSocketImpl extends TCPSocket {
         }
     }
 
-    public void dupAckHandler(short initialSendBase) throws Exception {
+    public void dupAckHandler() throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         
-        int dataIndex = this.mostRcvdAck - initialSendBase;
+        int dataIndex = this.mostRcvdAck - this.initialSendBase;
         ackPacket.addData(tempData[dataIndex]);
 
         ackPacket.setSequenceNumber(this.mostRcvdAck);
@@ -272,65 +273,94 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("New window size: " + this.windowSize);
     }
 
-    public void fastRecoveryHandler(Timer timer, short lastRcvdAck,
-            short initialSendBase) throws Exception {
-        if (lastRcvdAck > this.sendBase) {
-            this.presentState = CongestionState.SLOW_START;
-            this.dupAckCounter = 0;
-            this.mostRcvdAck = lastRcvdAck;
-            // @TODO: Chagne it to Congestion Avoidance
-            slowStartHandler(timer, lastRcvdAck, initialSendBase);
-            return;
-        }
+    public void congestionAvoidanceWindowHandler(Timer timer, short lastRcvdAck) {
 
-        fastRecoveryWindowHandler();
+        // @TODO: Check it out.
+        this.cwnd += (Math.ceil(MSS * (MSS / this.cwnd))) * (lastRcvdAck - this.sendBase);
+        this.windowSize = (short)Math.min(rwnd, cwnd);
+
+        System.out.println("New window size: " + this.windowSize);
+        setNewSendBase(timer, lastRcvdAck);
     }
-    
-    public void slowStartToFastRecovery(Timer timer, short lastRcvdAck,
-            short initialSendBase) throws Exception {
+
+    public void fastRecoveryToCongestionAvoidance(Timer timer, short lastRcvdAck)
+            throws Exception {
+        this.presentState = CongestionState.CONGESTION_AVOIDANCE;
+        this.dupAckCounter = 0;
+        this.mostRcvdAck = lastRcvdAck;
+        this.cwnd = this.ssthresh;
+
+        System.out.println("New window size: " + this.windowSize);
+        setNewSendBase(timer, lastRcvdAck);
+    }
+
+    public void changeToFastRecovery(Timer timer, short lastRcvdAck) throws Exception {
 
         this.presentState = CongestionState.FAST_RECOVERY;
         
         this.ssthresh = (short)Math.ceil(this.cwnd / 2);
         this.cwnd = (short)(this.ssthresh + 3);
+        
+        dupAckHandler();
+    }
+    
+    public void slowStartHandler(Timer timer, short lastRcvdAck) throws Exception {
+        
+        if (lastRcvdAck > this.sendBase)
+        slowStartWindowHandler(timer, lastRcvdAck);
+        else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
+            this.dupAckCounter++;
+            this.mostRcvdAck = lastRcvdAck;
+        }
+        
+        if (this.dupAckCounter >= 3)
+        changeToFastRecovery(timer, lastRcvdAck);
+    }
+    
+    public void fastRecoveryHandler(Timer timer, short lastRcvdAck) throws Exception {
+        if (lastRcvdAck > this.sendBase) {
+            fastRecoveryToCongestionAvoidance(timer, lastRcvdAck);
+            return;
+        }
 
-        dupAckHandler(initialSendBase);
+        fastRecoveryWindowHandler();
     }
 
-    public void slowStartHandler(Timer timer, short lastRcvdAck,
-            short initialSendBase) throws Exception {
+    public void congestionAvoidanceHandler(Timer timer, short lastRcvdAck) throws Exception {
 
         if (lastRcvdAck > this.sendBase)
-            slowStartWindowHandler(timer, lastRcvdAck);
+            congestionAvoidanceWindowHandler(timer, lastRcvdAck);
         else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
             this.dupAckCounter++;
             this.mostRcvdAck = lastRcvdAck;
         }
 
         if (this.dupAckCounter >= 3)
-            slowStartToFastRecovery(timer, lastRcvdAck, initialSendBase);
+            changeToFastRecovery(timer, lastRcvdAck);
     }
 
-    public void processPacket(Timer timer, short lastRcvdAck,
-            short initialSendBase) throws Exception {
-        // @TODO: check when (lastRcvdAck == this.sendBase), is it dupACK or not ?!
+    public void processPacket(Timer timer, short lastRcvdAck) throws Exception {
 
         System.out.println("presentState: " + this.presentState);
         switch (this.presentState) {
             case SLOW_START:
-                slowStartHandler(timer, lastRcvdAck, initialSendBase);
+                slowStartHandler(timer, lastRcvdAck);
                 break;
         
             case FAST_RECOVERY:
-                fastRecoveryHandler(timer, lastRcvdAck, initialSendBase);
+                fastRecoveryHandler(timer, lastRcvdAck);
                 break;
+
+            case CONGESTION_AVOIDANCE:
+                congestionAvoidanceHandler(timer, lastRcvdAck);
+                break;
+
             default:
                 break;
         }
     }
 
-    public void getAckPacket(String pathToFile, Timer timer,
-            short initialSendBase) throws Exception {
+    public void getAckPacket(String pathToFile, Timer timer) throws Exception {
         TCPHeaderParser lastRcvdAck;
 
         try {
@@ -342,7 +372,7 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() +
                 " ##, with the data = " + lastRcvdAck.getData()[0]);
         
-        processPacket(timer, lastRcvdAck.getAckNumber(), initialSendBase);
+        processPacket(timer, lastRcvdAck.getAckNumber());
     }
 
     public void cancelTimers(Timer time_out_timer) {
@@ -355,11 +385,11 @@ public class TCPSocketImpl extends TCPSocket {
 
         intializeSocket(time_out_timer);
 
-        short initialSendBase = this.sendBase;
+        initialSendBase = this.sendBase;
 
-        while (this.sendBase - initialSendBase < tempData.length) {  
-            checkWindowSizeAndSendPacket(initialSendBase);
-            getAckPacket(pathToFile, time_out_timer, initialSendBase);
+        while (this.sendBase - this.initialSendBase < tempData.length) {  
+            checkWindowSizeAndSendPacket();
+            getAckPacket(pathToFile, time_out_timer);
         }
         cancelTimers(time_out_timer);
     }
@@ -391,7 +421,6 @@ public class TCPSocketImpl extends TCPSocket {
         this.ssthresh = (short)(Math.ceil((double)this.cwnd / 2));
         this.cwnd = 1 * MSS;
         this.presentState = CongestionState.SLOW_START;
-        
         this.windowSize = (short)Math.min(this.cwnd, this.rwnd);
 
         System.out.println("## Time-out ## " + "New window size: " + this.windowSize);
