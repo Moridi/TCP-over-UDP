@@ -1,4 +1,5 @@
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.SocketTimeoutException;
@@ -64,6 +65,7 @@ public class TCPSocketImpl extends TCPSocket {
     private ArrayList<byte[]> dataBuffer;
     private Queue<byte[]> senderDataBuffer;
     private FileInputStream senderInputStream;
+    private FileOutputStream recieverOutputStream;
     private ArrayList<Boolean> isReceived;
 
     public void init(String ip, int port, short base) {
@@ -471,12 +473,14 @@ public class TCPSocketImpl extends TCPSocket {
         this.emptyBuffer = tempRwnd;
     }
 
-    private void popReciverBuffer() {
+    private void popReciverBuffer() throws IOException {
         this.expectedSeqNumber += 1;
         // @TODO: this.expectedSeqNumber += size of bytes in payload.;
         System.out.println(" @@ saving to file:" + new String(dataBuffer.get(0)));
 
         // save file in storage.
+        this.recieverOutputStream.write(dataBuffer.get(0));
+
         this.isReceived.remove(0);
         this.dataBuffer.remove(0);
     }
@@ -525,6 +529,8 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void initializeReceiverSide(Timer timer) throws Exception {
+        
+
         dataBuffer = new ArrayList<byte[]>(
                 Collections.nCopies(this.receiverBufferSize, new byte[this.receiverBufferSize]));
 
@@ -550,6 +556,7 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public void receive(String pathToFile) throws Exception {
+        this.recieverOutputStream = new FileOutputStream(pathToFile);    
 
         Timer rwndTimer = new Timer();
         initializeReceiverSide(rwndTimer);
