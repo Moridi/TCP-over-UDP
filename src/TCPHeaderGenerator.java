@@ -74,4 +74,11 @@ public class TCPHeaderGenerator {
         buffer[currentDataIndex] = newData;
         currentDataIndex++;
     }
+
+    public void addData(byte[] newData) {
+        for(int i=0; i < newData.length; i++) {
+            this.addData(newData[i]);
+        }
+    }
+
 }
