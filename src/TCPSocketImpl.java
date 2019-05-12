@@ -274,6 +274,22 @@ public class TCPSocketImpl extends TCPSocket {
         }
     }
 
+    public void sendWindowPackets() throws Exception {
+        Iterator<byte[]> itr = this.senderDataBuffer.iterator();
+        for (int i = 0; i < this.windowSize; i++) {
+            if (!itr.hasNext())
+                break;
+            byte[] data = itr.next();
+            
+            TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
+            
+            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data));
+
+            ackPacket.addData(data);
+            sendDataPacket(ackPacket);
+        }
+    }
+
     public void dupAckHandler(int lostPacket) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
 
@@ -316,7 +332,7 @@ public class TCPSocketImpl extends TCPSocket {
     public void congestionAvoidanceWindowHandler(Timer timer, short lastRcvdAck) {
 
         // @TODO: Check it out.
-        this.cwnd += (Math.ceil(MSS * (MSS / this.cwnd))) * (lastRcvdAck - this.sendBase);
+        this.cwnd += (Math.ceil(MSS * (MSS / Math.max(this.cwnd, 1))) * (lastRcvdAck - this.sendBase));
         this.windowSize = (short) Math.min(rwnd, cwnd);
 
         System.out.println("New window size: " + this.windowSize);
@@ -412,7 +428,7 @@ public class TCPSocketImpl extends TCPSocket {
         }
 
         System.out.println(
-                "## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##, with the data = " + lastRcvdAck.getData()[0]);
+                "## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
 
         processPacket(timer, lastRcvdAck.getAckNumber(), lastRcvdAck.getRwnd());
     }
@@ -504,7 +520,8 @@ public class TCPSocketImpl extends TCPSocket {
         this.windowSize = (short) Math.min(this.cwnd, this.rwnd);
 
         System.out.println("## Time-out ## " + "New window size: " + this.windowSize);
-        dupAckHandler(this.sendBase);
+        sendWindowPackets();
+        // dupAckHandler(this.sendBase);
     }
 
     public void initializeReceiverSide(Timer timer) throws Exception {
