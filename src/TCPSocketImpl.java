@@ -235,7 +235,7 @@ public class TCPSocketImpl extends TCPSocket {
         while(this.sendBase < lastRcvdAck) {
             this.sendBase++;
             byte[] temp = this.senderDataBuffer.poll();
-            System.out.println(" @@ ACKed: " + new String(temp));
+            System.out.println(" @@ ACKed: " + new String(temp) + " # sendBase: " + this.sendBase);
         }
         // Restart timer
         timer.cancel();
@@ -434,7 +434,7 @@ public class TCPSocketImpl extends TCPSocket {
         this.senderDataBuffer = new LinkedList<>();
         this.senderInputStream = new FileInputStream(pathToFile);
 
-        while (this.senderInputStream.available() > 0) {
+        while (this.senderInputStream.available() > 0 || this.senderDataBuffer.size() > 0) {
             sendWindowPackets();
             getAckPacket(pathToFile, time_out_timer);
         }
