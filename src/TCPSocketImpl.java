@@ -14,7 +14,8 @@ public class TCPSocketImpl extends TCPSocket {
     static final int RCV_TIME_OUT = 1000;
     static final int TIME_OUT = 8000;
     static final int DELAY = 1000;
-    static final int ACK_TIME_OUT = 250;
+    static final int ACK_TIME_OUT = 2500;
+    // static final int ACK_TIME_OUT = 250;
     static final int MSS = 1;
     static final double LOSS_RATE = 0.2;
 
@@ -66,7 +67,7 @@ public class TCPSocketImpl extends TCPSocket {
     private ArrayList<byte[]> dataBuffer;
     private Queue<byte[]> senderDataBuffer;
     private FileInputStream senderInputStream;
-    private Boolean[] isReceived;
+    private ArrayList<Boolean> isReceived;
 
     public void init(String ip, int port, short base) {
         this.destIp = ip;
@@ -247,7 +248,7 @@ public class TCPSocketImpl extends TCPSocket {
 
     public void updateSenderBuffer() throws IOException {
         while(this.senderDataBuffer.size() < this.windowSize) {
-            byte[] temp = new byte[this.SENDER_PAYLOAD_LENGTH];
+            byte[] temp = new byte[SENDER_PAYLOAD_LENGTH];
 
             int i = this.senderInputStream.read(temp);
             if (i == -1)
@@ -452,41 +453,49 @@ public class TCPSocketImpl extends TCPSocket {
 // ###################################################
 
 
-    public void setRwnd(Boolean[] isReceived) {
+    public void setRwnd(ArrayList<Boolean> isReceived) {
         short tempRwnd = 0;
 
-        for (int i = 0; i < isReceived.length; i++)
-            if (!isReceived[i])
+        for (int i = 0; i < isReceived.size(); i++)
+            if (!isReceived.get(i))
                 tempRwnd++;
 
         this.emptyBuffer = tempRwnd;
     }
 
-    public byte addDataToBuffer(TCPHeaderParser packetParser, short initialExpectedSeqNum) throws Exception {
-        short dataIndex = (short) (packetParser.getSequenceNumber() - initialExpectedSeqNum);
+    private void popReciverBuffer() {
+        this.expectedSeqNumber += 1;
+        // @TODO: this.expectedSeqNumber += size of bytes in payload.;
+        System.out.println(" @@ saving to file:" + new String(dataBuffer.get(0)));
 
-        isReceived[dataIndex] = true;
+        // save file in storage.
+        this.isReceived.remove(0);
+        this.dataBuffer.remove(0);
+    }
+
+    public byte addDataToBuffer(TCPHeaderParser packetParser, short windowBaseSeqNum) throws Exception {
+        short dataIndex = (short) (packetParser.getSequenceNumber() - this.expectedSeqNumber);
+
+        isReceived.set(dataIndex, true);
         dataBuffer.set(dataIndex, packetParser.getData());
         setRwnd(isReceived);
 
         if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
-            this.expectedSeqNumber += 1;
+            popReciverBuffer();
 
-            while (dataIndex < isReceived.length && isReceived[dataIndex]) {
-                this.expectedSeqNumber += 1;
-                dataIndex++;
-            }
-            // @TODO: this.expectedSeqNumber += size of bytes in payload.;
+            while (this.expectedSeqNumber < isReceived.size() && isReceived.get(this.expectedSeqNumber))
+                popReciverBuffer();
+            
         }
         return packetParser.getData()[0];
     }
 
-    public byte receiveData(Timer timer, short initialExpectedSeqNum) throws Exception {
+    public byte receiveData(Timer timer, short windowBaseSeqNum) throws Exception {
         TCPHeaderParser packetParser;
         try {
             packetParser = receivePacket();
             restartRwndTimer(timer);
-            return addDataToBuffer(packetParser, initialExpectedSeqNum);
+            return addDataToBuffer(packetParser, windowBaseSeqNum);
         } catch (Exception e) {
             setRwnd(isReceived);
             return 0;
@@ -510,18 +519,19 @@ public class TCPSocketImpl extends TCPSocket {
     public void initializeReceiverSide(Timer timer) throws Exception {
         dataBuffer = new ArrayList<byte[]>(
                 Collections.nCopies(this.receiverBufferSize, new byte[this.receiverBufferSize]));
-        isReceived = new Boolean[this.receiverBufferSize];
-        Arrays.fill(isReceived, false);
+
+        isReceived = new ArrayList<Boolean>(Arrays.asList(new Boolean[this.receiverBufferSize]));
+        Collections.fill(isReceived, Boolean.FALSE);
 
         // Start timer
-        timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
+        // timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
     }
 
     public void restartRwndTimer(Timer timer) {
         // Restart timer
-        timer.cancel();
-        timer = new Timer();
-        timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
+        // timer.cancel();
+        // timer = new Timer();
+        // timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
     }
 
     // It's just for notifying the sender when the buffer gets empty
@@ -537,15 +547,21 @@ public class TCPSocketImpl extends TCPSocket {
         initializeReceiverSide(rwndTimer);
         Byte testData = 0;
 
-        short initialExpectedSeqNum = this.expectedSeqNumber;
+        short windowBaseSeqNum = this.expectedSeqNumber;
 
         while (true) {
-            if (Arrays.asList(isReceived).contains(false)) {
-                testData = receiveData(rwndTimer, initialExpectedSeqNum);
+            if (isReceived.contains(Boolean.FALSE)) {
+                testData = receiveData(rwndTimer, windowBaseSeqNum);
                 sendAckPacket(pathToFile, testData);
             }
         }
     }
+
+    // ###########################################################
+    // ###########################################################
+    // ###########################################################
+    // ###########################################################
+    // ###########################################################
 
     @Override
     public void close() throws Exception {
