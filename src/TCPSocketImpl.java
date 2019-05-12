@@ -58,10 +58,8 @@ public class TCPSocketImpl extends TCPSocket {
     private String destIp;
     private int destPort;
 
-    private short initialSendBase;
     private short windowSize;
     private short receiverBufferSize;
-    private byte tempData[];
 
     private ArrayList<byte[]> dataBuffer;
     private Queue<byte[]> senderDataBuffer;
@@ -82,11 +80,6 @@ public class TCPSocketImpl extends TCPSocket {
         this.windowSize = (short) Math.min(rwnd, cwnd);
         this.sendBase = base;
         this.nextSeqNumber = base;
-
-        this.tempData = new byte[TEMP_DATA_SIZE];
-        for (int i = 0; i < this.tempData.length; ++i) {
-            tempData[i] = (byte) i;
-        }
     }
 
     public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port, short expectedSeqNumber, short base) {
@@ -180,7 +173,7 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("**** Connection established! ****\n");
     }
 
-    public void sendAckPacket(String pathToFile, Byte testData) throws Exception {
+    public void sendAckPacket(String pathToFile) throws Exception {
         TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
         ackPacket.setAckFlag();
 
@@ -188,13 +181,10 @@ public class TCPSocketImpl extends TCPSocket {
         ackPacket.setAckNumber(this.expectedSeqNumber);
         ackPacket.setRwnd(this.emptyBuffer);
 
-        // @TODO: Remove it.
-        ackPacket.addData(testData);
-
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
 
-        System.out.println("## Sending AckNum: " + this.expectedSeqNumber + ", Data: " + testData);
+        System.out.println("## Sending AckNum: " + this.expectedSeqNumber);
 
         this.nextSeqNumber += 1;
     }
@@ -225,7 +215,6 @@ public class TCPSocketImpl extends TCPSocket {
         this.sendBase = this.nextSeqNumber;
         this.socket.setSoTimeout(ACK_TIME_OUT);
         this.mostRcvdAck = -1;
-        this.initialSendBase = this.sendBase;
 
         // Start timer
         time_out_timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
@@ -299,10 +288,6 @@ public class TCPSocketImpl extends TCPSocket {
 
             tempSendBase++;
         }
-        // int dataIndex = lostPacket - this.initialSendBase;
-
-        // if (dataIndex >= tempData.length || dataIndex < 0)
-        // return;
 
         ackPacket.addData(data);
         ackPacket.setSequenceNumber((short) lostPacket);
@@ -496,15 +481,15 @@ public class TCPSocketImpl extends TCPSocket {
         return packetParser.getData()[0];
     }
 
-    public byte receiveData(Timer timer, short windowBaseSeqNum) throws Exception {
+    public void receiveData(Timer timer, short windowBaseSeqNum) throws Exception {
         TCPHeaderParser packetParser;
         try {
             packetParser = receivePacket();
             restartRwndTimer(timer);
-            return addDataToBuffer(packetParser, windowBaseSeqNum);
+            addDataToBuffer(packetParser, windowBaseSeqNum);
         } catch (Exception e) {
             setRwnd(isReceived);
-            return 0;
+            return;
         }
     }
 
@@ -543,7 +528,7 @@ public class TCPSocketImpl extends TCPSocket {
     // It's just for notifying the sender when the buffer gets empty
     public void sendSimpleAck() throws Exception {
         System.out.println("Send notifier to the sender");
-        sendAckPacket("Notifier", (byte) 0);
+        sendAckPacket("Notifier");
     }
 
     @Override
@@ -551,14 +536,13 @@ public class TCPSocketImpl extends TCPSocket {
 
         Timer rwndTimer = new Timer();
         initializeReceiverSide(rwndTimer);
-        Byte testData = 0;
 
         short windowBaseSeqNum = this.expectedSeqNumber;
 
         while (true) {
             if (isReceived.contains(Boolean.FALSE)) {
-                testData = receiveData(rwndTimer, windowBaseSeqNum);
-                sendAckPacket(pathToFile, testData);
+                receiveData(rwndTimer, windowBaseSeqNum);
+                sendAckPacket(pathToFile);
             }
         }
     }
