@@ -77,13 +77,13 @@ public class TCPSocketImpl extends TCPSocket {
 
         this.presentState = CongestionState.SLOW_START;
         this.cwnd = INIT_CWND * MSS;
-        this.ssthresh = INIT_SSTHRESH * MSS;
+        this.setSSThreshold( (short) (INIT_SSTHRESH * MSS));
         this.receiverBufferSize = INIT_RWND * MSS;
         this.rwnd = receiverBufferSize;
         this.emptyBuffer = receiverBufferSize;
 
         this.windowSize = (short) Math.min(rwnd, cwnd);
-        this.sendBase = base;
+        this.setSendBase(base);
         this.nextSeqNumber = base;
     }
 
@@ -141,7 +141,7 @@ public class TCPSocketImpl extends TCPSocket {
         }
 
         socket.setSoTimeout(0);
-        this.sendBase = ackPacketParser.getAckNumber();
+        this.setSendBase(ackPacketParser.getAckNumber());
         this.expectedSeqNumber = (short) (ackPacketParser.getSequenceNumber() + 1);
     }
 
@@ -217,7 +217,7 @@ public class TCPSocketImpl extends TCPSocket {
     public void initializeSocket() throws Exception {
         this.socket.setLossRate(LOSS_RATE);
         this.socket.setDelayInMilliseconds(DELAY);
-        this.sendBase = this.nextSeqNumber;
+        this.setSendBase(this.nextSeqNumber);
         this.socket.setSoTimeout(ACK_TIME_OUT);
         this.mostRcvdAck = -1;
 
@@ -366,7 +366,7 @@ public class TCPSocketImpl extends TCPSocket {
 
         this.presentState = CongestionState.FAST_RECOVERY;
 
-        this.ssthresh = (short) Math.ceil(this.cwnd / 2);
+        this.setSSThreshold((short) Math.ceil(this.cwnd / 2));
         this.cwnd = (short) (this.ssthresh + 3);
 
         dupAckHandler(this.mostRcvdAck);
@@ -467,9 +467,8 @@ public class TCPSocketImpl extends TCPSocket {
             getAckPacket(pathToFile);
         }
         cancelTimers();
-        this.socket.close();
-
         this.senderInputStream.close();
+        this.close();
     }
 
     // ###################################################
@@ -541,7 +540,7 @@ public class TCPSocketImpl extends TCPSocket {
         // this.nextSeqNumber = this.sendBase;
         // dupAckCounter = 0;
         // this.mostRcvdAck = -1;
-        this.ssthresh = (short) (Math.ceil((double) this.cwnd / 2));
+        this.setSSThreshold((short) (Math.ceil((double) this.cwnd / 2)));
         this.cwnd = 1 * MSS;
         this.presentState = CongestionState.SLOW_START;
 
@@ -601,7 +600,9 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public void close() throws Exception {
-        throw new RuntimeException("Not implemented!");
+        // throw new RuntimeException("Not implemented!");
+        this.socket.close();
+        this.saveCongestionWindowPlot();
     }
 
     @Override
@@ -612,5 +613,15 @@ public class TCPSocketImpl extends TCPSocket {
     @Override
     public long getWindowSize() {
         return windowSize;
+    }
+
+    private void setSendBase(short value) {
+        this.sendBase = value;
+        this.onWindowChange();
+    }
+
+    private void setSSThreshold(short value) {
+        this.ssthresh = value;
+        this.onWindowChange();
     }
 }
