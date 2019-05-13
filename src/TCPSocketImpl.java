@@ -12,12 +12,12 @@ import java.util.Queue;
 import java.util.Timer;
 
 public class TCPSocketImpl extends TCPSocket {
-    static final int RCV_TIME_OUT = 1000;
-    static final int TIME_OUT = 8000;
-    static final int DELAY = 1000;
-    static final int ACK_TIME_OUT = 250;
+    static final int RCV_TIME_OUT = 400;
+    static final int TIME_OUT = 3000;
+    static final int DELAY = 200;
+    static final int ACK_TIME_OUT = 100;
     static final int MSS = 1;
-    static final double LOSS_RATE = 0.2;
+    static final double LOSS_RATE = 0.3;
 
     static final int SENDER_PORT = 9090;
     static final short FIRST_SEQUENCE = 100;
@@ -29,6 +29,7 @@ public class TCPSocketImpl extends TCPSocket {
     static final int SAMPLE_RTT = 1000;
 
     static final int SENDER_PAYLOAD_LENGTH = 3;
+    static final int MAX_PAYLOAD_LENGTH = 30;
 
     // If you want to change the TEMP_DATA_SIZE, change the INIT_RWND too
     static final short TEMP_DATA_SIZE = 14;
@@ -188,7 +189,7 @@ public class TCPSocketImpl extends TCPSocket {
         DatagramPacket sendingPacket = ackPacket.getPacket();
         this.socket.send(sendingPacket);
 
-        System.out.println("## Sending AckNum: " + this.expectedSeqNumber);
+        System.out.println("Sending AckNum: " + this.expectedSeqNumber);
 
         this.nextSeqNumber += 1;
     }
@@ -230,6 +231,8 @@ public class TCPSocketImpl extends TCPSocket {
             byte[] temp = this.senderDataBuffer.poll();
             System.out.println(" @@ ACKed: " + new String(temp) + " # sendBase: " + this.sendBase);
         }
+        if (this.nextSeqNumber < this.sendBase)
+            this.nextSeqNumber = this.sendBase;
         // Restart timer
         this.timer.cancel();
         this.timer = new Timer();
@@ -271,7 +274,7 @@ public class TCPSocketImpl extends TCPSocket {
             this.senderDataBuffer.add(data);
             TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
 
-            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data));
+            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data) + " SeqNum: " + this.nextSeqNumber);
 
             ackPacket.addData(data);
             sendDataPacket(ackPacket);
@@ -279,6 +282,9 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void sendWindowPackets() throws Exception {
+        short temSeqNum = this.nextSeqNumber;
+        this.nextSeqNumber = this.sendBase;
+
         Iterator<byte[]> itr = this.senderDataBuffer.iterator();
         for (int i = 0; i < this.windowSize; i++) {
             if (!itr.hasNext())
@@ -287,11 +293,13 @@ public class TCPSocketImpl extends TCPSocket {
             
             TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
             
-            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data));
+            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data) + " SeqNum: " + this.nextSeqNumber);
 
             ackPacket.addData(data);
             sendDataPacket(ackPacket);
         }
+
+        this.nextSeqNumber = temSeqNum;
     }
 
     public void dupAckHandler(int lostPacket) throws Exception {
@@ -491,22 +499,30 @@ public class TCPSocketImpl extends TCPSocket {
 
         this.isReceived.remove(0);
         this.dataBuffer.remove(0);
+
+        this.isReceived.add(false);
+        this.dataBuffer.add(new byte[MAX_PAYLOAD_LENGTH]);
     }
 
-    public byte addDataToBuffer(TCPHeaderParser packetParser, short windowBaseSeqNum) throws Exception {
+    public void addDataToBuffer(TCPHeaderParser packetParser, short windowBaseSeqNum) throws Exception {
         short dataIndex = (short) (packetParser.getSequenceNumber() - this.expectedSeqNumber);
+
+        if (isReceived.get(dataIndex))
+            return;
 
         isReceived.set(dataIndex, true);
         dataBuffer.set(dataIndex, packetParser.getData());
+
+        System.out.println(" ## saved to buffer: " + new String(packetParser.getData()) + " AckNum: " + packetParser.getSequenceNumber());
         setRwnd(isReceived);
 
         if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
             popReciverBuffer();
 
-            while (this.expectedSeqNumber < isReceived.size() && isReceived.get(this.expectedSeqNumber))
+            while (isReceived.size() > 0 && isReceived.get(0))
                 popReciverBuffer();
         }
-        return packetParser.getData()[0];
+        return;
     }
 
     public void receiveData(short windowBaseSeqNum) throws Exception {
@@ -522,9 +538,9 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void resetSenderWindow() throws Exception {
-        this.nextSeqNumber = this.sendBase;
-        dupAckCounter = 0;
-        this.mostRcvdAck = -1;
+        // this.nextSeqNumber = this.sendBase;
+        // dupAckCounter = 0;
+        // this.mostRcvdAck = -1;
         this.ssthresh = (short) (Math.ceil((double) this.cwnd / 2));
         this.cwnd = 1 * MSS;
         this.presentState = CongestionState.SLOW_START;
@@ -537,15 +553,14 @@ public class TCPSocketImpl extends TCPSocket {
     }
 
     public void initializeReceiverSide() throws Exception {
-        
-
         dataBuffer = new ArrayList<byte[]>(
-                Collections.nCopies(this.receiverBufferSize, new byte[this.receiverBufferSize]));
+                Collections.nCopies(this.receiverBufferSize, new byte[MAX_PAYLOAD_LENGTH]));
 
         isReceived = new ArrayList<Boolean>(Arrays.asList(new Boolean[this.receiverBufferSize]));
         Collections.fill(isReceived, Boolean.FALSE);
 
         // Start timer
+        this.timer = new Timer();
         this.timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
     }
 
@@ -566,7 +581,6 @@ public class TCPSocketImpl extends TCPSocket {
     public void receive(String pathToFile) throws Exception {
         this.recieverOutputStream = new FileOutputStream(pathToFile);    
 
-        this.timer = new Timer();
         initializeReceiverSide();
 
         short windowBaseSeqNum = this.expectedSeqNumber;
