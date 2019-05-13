@@ -68,6 +68,8 @@ public class TCPSocketImpl extends TCPSocket {
     private FileOutputStream recieverOutputStream;
     private ArrayList<Boolean> isReceived;
 
+    private Timer timer;
+
     public void init(String ip, int port, short base) {
         this.destIp = ip;
         this.destPort = port;
@@ -211,7 +213,7 @@ public class TCPSocketImpl extends TCPSocket {
         return receivedPacket;
     }
 
-    public void initializeSocket(Timer time_out_timer) throws Exception {
+    public void initializeSocket() throws Exception {
         this.socket.setLossRate(LOSS_RATE);
         this.socket.setDelayInMilliseconds(DELAY);
         this.sendBase = this.nextSeqNumber;
@@ -219,19 +221,19 @@ public class TCPSocketImpl extends TCPSocket {
         this.mostRcvdAck = -1;
 
         // Start timer
-        time_out_timer.scheduleAtFixedRate(new TimeoutTimer(this), 0, TIME_OUT);
+        this.timer.scheduleAtFixedRate(new TimeoutTimer(this), 0, TIME_OUT);
     }
 
-    public void setNewSendBase(Timer timer, short lastRcvdAck) {
+    public void setNewSendBase(short lastRcvdAck) {
         while (this.sendBase < lastRcvdAck) {
             this.sendBase++;
             byte[] temp = this.senderDataBuffer.poll();
             System.out.println(" @@ ACKed: " + new String(temp) + " # sendBase: " + this.sendBase);
         }
         // Restart timer
-        timer.cancel();
-        timer = new Timer();
-        timer.scheduleAtFixedRate(new TimeoutTimer(this), 0, TIME_OUT);
+        this.timer.cancel();
+        this.timer = new Timer();
+        this.timer.scheduleAtFixedRate(new TimeoutTimer(this), 0, TIME_OUT);
         this.dupAckCounter = 0;
         this.mostRcvdAck = lastRcvdAck;
     }
@@ -317,12 +319,12 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("Sender, retransmit ** : " + new String(data) + " SeqNum: " + lostPacket);
     }
 
-    public void slowStartWindowHandler(Timer timer, short lastRcvdAck) {
+    public void slowStartWindowHandler(short lastRcvdAck) {
         this.cwnd += MSS * (lastRcvdAck - this.sendBase);
         this.windowSize = (short) Math.min(rwnd, cwnd);
 
         System.out.println("New window size: " + this.windowSize);
-        setNewSendBase(timer, lastRcvdAck);
+        setNewSendBase(lastRcvdAck);
     }
 
     public void fastRecoveryWindowHandler() {
@@ -332,27 +334,27 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println("New window size: " + this.windowSize);
     }
 
-    public void congestionAvoidanceWindowHandler(Timer timer, short lastRcvdAck) {
+    public void congestionAvoidanceWindowHandler(short lastRcvdAck) {
 
         // @TODO: Check it out.
         this.cwnd += (Math.ceil(MSS * (MSS / Math.max(this.cwnd, 1))) * (lastRcvdAck - this.sendBase));
         this.windowSize = (short) Math.min(rwnd, cwnd);
 
         System.out.println("New window size: " + this.windowSize);
-        setNewSendBase(timer, lastRcvdAck);
+        setNewSendBase(lastRcvdAck);
     }
 
-    public void fastRecoveryToCongestionAvoidance(Timer timer, short lastRcvdAck) throws Exception {
+    public void fastRecoveryToCongestionAvoidance(short lastRcvdAck) throws Exception {
         this.presentState = CongestionState.CONGESTION_AVOIDANCE;
         this.dupAckCounter = 0;
         this.mostRcvdAck = lastRcvdAck;
         this.cwnd = this.ssthresh;
 
         System.out.println("New window size: " + this.windowSize);
-        setNewSendBase(timer, lastRcvdAck);
+        setNewSendBase(lastRcvdAck);
     }
 
-    public void changeToFastRecovery(Timer timer, short lastRcvdAck) throws Exception {
+    public void changeToFastRecovery(short lastRcvdAck) throws Exception {
 
         this.presentState = CongestionState.FAST_RECOVERY;
 
@@ -362,25 +364,25 @@ public class TCPSocketImpl extends TCPSocket {
         dupAckHandler(this.mostRcvdAck);
     }
 
-    public void slowStartHandler(Timer timer, short lastRcvdAck) throws Exception {
+    public void slowStartHandler(short lastRcvdAck) throws Exception {
 
         if (lastRcvdAck > this.sendBase)
-            slowStartWindowHandler(timer, lastRcvdAck);
+            slowStartWindowHandler(lastRcvdAck);
         else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
             this.dupAckCounter++;
             this.mostRcvdAck = lastRcvdAck;
         }
 
         if (this.dupAckCounter >= 3)
-            changeToFastRecovery(timer, lastRcvdAck);
+            changeToFastRecovery(lastRcvdAck);
         else if (this.cwnd >= this.ssthresh)
             this.presentState = CongestionState.CONGESTION_AVOIDANCE;
 
     }
 
-    public void fastRecoveryHandler(Timer timer, short lastRcvdAck) throws Exception {
+    public void fastRecoveryHandler(short lastRcvdAck) throws Exception {
         if (lastRcvdAck > this.sendBase) {
-            fastRecoveryToCongestionAvoidance(timer, lastRcvdAck);
+            fastRecoveryToCongestionAvoidance(lastRcvdAck);
             return;
         }
 
@@ -391,41 +393,41 @@ public class TCPSocketImpl extends TCPSocket {
         }
     }
 
-    public void congestionAvoidanceHandler(Timer timer, short lastRcvdAck) throws Exception {
+    public void congestionAvoidanceHandler(short lastRcvdAck) throws Exception {
 
         if (lastRcvdAck > this.sendBase)
-            congestionAvoidanceWindowHandler(timer, lastRcvdAck);
+            congestionAvoidanceWindowHandler(lastRcvdAck);
         else if (this.mostRcvdAck == lastRcvdAck || this.mostRcvdAck == -1) {
             this.dupAckCounter++;
             this.mostRcvdAck = lastRcvdAck;
         }
 
         if (this.dupAckCounter >= 3)
-            changeToFastRecovery(timer, lastRcvdAck);
+            changeToFastRecovery(lastRcvdAck);
     }
 
-    public void processPacket(Timer timer, short lastRcvdAck, short lastRwnd) throws Exception {
+    public void processPacket(short lastRcvdAck, short lastRwnd) throws Exception {
 
         this.rwnd = lastRwnd;
 
         switch (this.presentState) {
         case SLOW_START:
-            slowStartHandler(timer, lastRcvdAck);
+            slowStartHandler(lastRcvdAck);
             break;
 
         case FAST_RECOVERY:
-            fastRecoveryHandler(timer, lastRcvdAck);
+            fastRecoveryHandler(lastRcvdAck);
             break;
 
         case CONGESTION_AVOIDANCE:
-            congestionAvoidanceHandler(timer, lastRcvdAck);
+            congestionAvoidanceHandler(lastRcvdAck);
             break;
         }
 
         System.out.println("State: " + this.presentState);
     }
 
-    public void getAckPacket(String pathToFile, Timer timer) throws Exception {
+    public void getAckPacket(String pathToFile) throws Exception {
         TCPHeaderParser lastRcvdAck;
 
         try {
@@ -437,26 +439,27 @@ public class TCPSocketImpl extends TCPSocket {
         System.out.println(
                 "## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
 
-        processPacket(timer, lastRcvdAck.getAckNumber(), lastRcvdAck.getRwnd());
+        processPacket(lastRcvdAck.getAckNumber(), lastRcvdAck.getRwnd());
     }
 
-    public void cancelTimers(Timer time_out_timer) {
-        time_out_timer.cancel();
+    public void cancelTimers() {
+        this.timer.cancel();
     }
 
     @Override
     public void send(String pathToFile) throws Exception {
-        Timer time_out_timer = new Timer();
+        this.timer = new Timer();
 
-        initializeSocket(time_out_timer);
+        initializeSocket();
         this.senderDataBuffer = new LinkedList<>();
         this.senderInputStream = new FileInputStream(pathToFile);
 
         while (this.senderInputStream.available() > 0 || this.senderDataBuffer.size() > 0) {
             sendNewWindowPackets();
-            getAckPacket(pathToFile, time_out_timer);
+            getAckPacket(pathToFile);
         }
-        cancelTimers(time_out_timer);
+        cancelTimers();
+        this.socket.close();
 
         this.senderInputStream.close();
     }
@@ -506,11 +509,11 @@ public class TCPSocketImpl extends TCPSocket {
         return packetParser.getData()[0];
     }
 
-    public void receiveData(Timer timer, short windowBaseSeqNum) throws Exception {
+    public void receiveData(short windowBaseSeqNum) throws Exception {
         TCPHeaderParser packetParser;
         try {
             packetParser = receivePacket();
-            restartRwndTimer(timer);
+            restartRwndTimer();
             addDataToBuffer(packetParser, windowBaseSeqNum);
         } catch (Exception e) {
             setRwnd(isReceived);
@@ -533,7 +536,7 @@ public class TCPSocketImpl extends TCPSocket {
         // dupAckHandler(this.sendBase);
     }
 
-    public void initializeReceiverSide(Timer timer) throws Exception {
+    public void initializeReceiverSide() throws Exception {
         
 
         dataBuffer = new ArrayList<byte[]>(
@@ -543,14 +546,14 @@ public class TCPSocketImpl extends TCPSocket {
         Collections.fill(isReceived, Boolean.FALSE);
 
         // Start timer
-        timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
+        this.timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
     }
 
-    public void restartRwndTimer(Timer timer) {
+    public void restartRwndTimer() {
         // Restart timer
-        timer.cancel();
-        timer = new Timer();
-        timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
+        this.timer.cancel();
+        this.timer = new Timer();
+        this.timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
     }
 
     // It's just for notifying the sender when the buffer gets empty
@@ -563,14 +566,14 @@ public class TCPSocketImpl extends TCPSocket {
     public void receive(String pathToFile) throws Exception {
         this.recieverOutputStream = new FileOutputStream(pathToFile);    
 
-        Timer rwndTimer = new Timer();
-        initializeReceiverSide(rwndTimer);
+        this.timer = new Timer();
+        initializeReceiverSide();
 
         short windowBaseSeqNum = this.expectedSeqNumber;
 
         while (true) {
             if (isReceived.contains(Boolean.FALSE)) {
-                receiveData(rwndTimer, windowBaseSeqNum);
+                receiveData(windowBaseSeqNum);
                 sendAckPacket(pathToFile);
             }
         }
