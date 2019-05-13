@@ -219,7 +219,7 @@ public class TCPSocketImpl extends TCPSocket {
         this.mostRcvdAck = -1;
 
         // Start timer
-        time_out_timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
+        time_out_timer.scheduleAtFixedRate(new TimeoutTimer(this), 0, TIME_OUT);
     }
 
     public void setNewSendBase(Timer timer, short lastRcvdAck) {
@@ -231,7 +231,7 @@ public class TCPSocketImpl extends TCPSocket {
         // Restart timer
         timer.cancel();
         timer = new Timer();
-        timer.schedule(new TimeoutTimer(this), 0, TIME_OUT);
+        timer.scheduleAtFixedRate(new TimeoutTimer(this), 0, TIME_OUT);
         this.dupAckCounter = 0;
         this.mostRcvdAck = lastRcvdAck;
     }
@@ -312,8 +312,9 @@ public class TCPSocketImpl extends TCPSocket {
         DatagramPacket sendingPacket = ackPacket.getPacket();
 
         this.socket.send(sendingPacket);
+        this.dupAckCounter = 0;
 
-        System.out.println("Sender, retransmit ** : " + new String(data));
+        System.out.println("Sender, retransmit ** : " + new String(data) + " SeqNum: " + lostPacket);
     }
 
     public void slowStartWindowHandler(Timer timer, short lastRcvdAck) {
@@ -384,6 +385,10 @@ public class TCPSocketImpl extends TCPSocket {
         }
 
         fastRecoveryWindowHandler();
+        dupAckCounter++;
+        if (dupAckCounter >= 3) {
+            dupAckHandler(lastRcvdAck);
+        }
     }
 
     public void congestionAvoidanceHandler(Timer timer, short lastRcvdAck) throws Exception {
@@ -538,14 +543,14 @@ public class TCPSocketImpl extends TCPSocket {
         Collections.fill(isReceived, Boolean.FALSE);
 
         // Start timer
-        timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
+        timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
     }
 
     public void restartRwndTimer(Timer timer) {
         // Restart timer
         timer.cancel();
         timer = new Timer();
-        timer.schedule(new RwndNotifier(this), 0, TIME_OUT);
+        timer.scheduleAtFixedRate(new RwndNotifier(this), 0, TIME_OUT);
     }
 
     // It's just for notifying the sender when the buffer gets empty
