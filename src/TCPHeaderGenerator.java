@@ -4,8 +4,8 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 
 public class TCPHeaderGenerator {
-    private int MIN_HEADER_SIZE = 40;
-    private int MIN_PAYLOAD_SIZE = 40;
+    public static final int MIN_HEADER_SIZE = 40;
+    // private int MIN_HEADER_SIZE = 40;
     private int SEQ_NUM_SIZE = 2;
     private int ACK_NUM_SIZE = 2;
     private int RWND_SIZE = 2;
@@ -24,7 +24,8 @@ public class TCPHeaderGenerator {
     public TCPHeaderGenerator(String _ip, int _port) {
         this.port = _port;
         this.ip = _ip;
-        this.buffer = new byte[MIN_HEADER_SIZE + MIN_PAYLOAD_SIZE];
+        this.buffer = new byte[
+                EnhancedDatagramSocket.DEFAULT_PAYLOAD_LIMIT_IN_BYTES];
         this.currentDataIndex = MIN_HEADER_SIZE;
         buffer[flagIndex] = 0x00;
     }

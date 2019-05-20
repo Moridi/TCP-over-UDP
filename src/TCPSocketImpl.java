@@ -25,14 +25,14 @@ public class TCPSocketImpl extends TCPSocket {
     static final short INIT_CWND = 4;
     static final short INIT_SSTHRESH = 2;
 
-    static final int MIN_BUFFER_SIZE = 80;
+    static final int MIN_BUFFER_SIZE =
+            EnhancedDatagramSocket.DEFAULT_PAYLOAD_LIMIT_IN_BYTES;
     static final int SAMPLE_RTT = 1000;
 
-    static final int SENDER_PAYLOAD_LENGTH = 3;
+    static final int SENDER_PAYLOAD_LENGTH =
+            EnhancedDatagramSocket.DEFAULT_PAYLOAD_LIMIT_IN_BYTES -
+            TCPHeaderGenerator.MIN_HEADER_SIZE;
     static final int MAX_PAYLOAD_LENGTH = 30;
-
-    // If you want to change the TEMP_DATA_SIZE, change the INIT_RWND too
-    static final short TEMP_DATA_SIZE = 14;
 
     enum CongestionState {
         SLOW_START, CONGESTION_AVOIDANCE, FAST_RECOVERY;
@@ -87,7 +87,8 @@ public class TCPSocketImpl extends TCPSocket {
         this.nextSeqNumber = base;
     }
 
-    public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port, short expectedSeqNumber, short base) {
+    public TCPSocketImpl(EnhancedDatagramSocket socket, String ip, int port,
+            short expectedSeqNumber, short base) {
         init(ip, port, base);
         this.socket = socket;
         this.expectedSeqNumber = expectedSeqNumber;
@@ -209,7 +210,8 @@ public class TCPSocketImpl extends TCPSocket {
             if (receivedPacket.isAckPacket())
                 break;
         }
-        this.expectedSeqNumber = (short) Math.max(this.expectedSeqNumber, receivedPacket.getSequenceNumber());
+        this.expectedSeqNumber = (short) Math.max(this.expectedSeqNumber,
+                receivedPacket.getSequenceNumber());
 
         return receivedPacket;
     }
@@ -229,7 +231,7 @@ public class TCPSocketImpl extends TCPSocket {
         while (this.sendBase < lastRcvdAck) {
             this.sendBase++;
             byte[] temp = this.senderDataBuffer.poll();
-            System.out.println(" @@ ACKed: " + new String(temp) + " # sendBase: " + this.sendBase);
+            System.out.println(" @@ ACKed # sendBase: " + this.sendBase);
         }
         if (this.nextSeqNumber < this.sendBase)
             this.nextSeqNumber = this.sendBase;
@@ -260,9 +262,11 @@ public class TCPSocketImpl extends TCPSocket {
         byte[] data = new byte[SENDER_PAYLOAD_LENGTH];
 
         int i = this.senderInputStream.read(data);
+
         if (i == -1)
             return null;
-        return data;
+
+        return Arrays.copyOf(data, i);
     }
 
     public void sendNewWindowPackets() throws Exception {
@@ -274,7 +278,7 @@ public class TCPSocketImpl extends TCPSocket {
             this.senderDataBuffer.add(data);
             TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
 
-            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data) + " SeqNum: " + this.nextSeqNumber);
+            System.out.println("Window Size: " + this.windowSize + " SeqNum: " + this.nextSeqNumber);
 
             ackPacket.addData(data);
             sendDataPacket(ackPacket);
@@ -293,7 +297,8 @@ public class TCPSocketImpl extends TCPSocket {
             
             TCPHeaderGenerator ackPacket = new TCPHeaderGenerator(this.destIp, this.destPort);
             
-            System.out.println("Window Size: " + this.windowSize + " Sending Data: " + new String(data) + " SeqNum: " + this.nextSeqNumber);
+            System.out.println("Window Size: " + this.windowSize +
+                    " SeqNum: " + this.nextSeqNumber);
 
             ackPacket.addData(data);
             sendDataPacket(ackPacket);
@@ -324,7 +329,7 @@ public class TCPSocketImpl extends TCPSocket {
         this.socket.send(sendingPacket);
         this.dupAckCounter = 0;
 
-        System.out.println("Sender, retransmit ** : " + new String(data) + " SeqNum: " + lostPacket);
+        System.out.println("Sender, retransmit ** SeqNum: " + lostPacket);
     }
 
     public void slowStartWindowHandler(short lastRcvdAck) {
@@ -444,8 +449,7 @@ public class TCPSocketImpl extends TCPSocket {
             return;
         }
 
-        System.out.println(
-                "## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
+        System.out.println("## recvd AckNum: " + lastRcvdAck.getAckNumber() + " ##");
 
         processPacket(lastRcvdAck.getAckNumber(), lastRcvdAck.getRwnd());
     }
@@ -491,9 +495,8 @@ public class TCPSocketImpl extends TCPSocket {
     private void popReciverBuffer() throws IOException {
         this.expectedSeqNumber += 1;
         // @TODO: this.expectedSeqNumber += size of bytes in payload.;
-        System.out.println(" @@ saving to file:" + new String(dataBuffer.get(0)));
+        System.out.println(" @@ saving to file");
 
-        // save file in storage.
         this.recieverOutputStream.write(dataBuffer.get(0));
 
         this.isReceived.remove(0);
@@ -512,7 +515,7 @@ public class TCPSocketImpl extends TCPSocket {
         isReceived.set(dataIndex, true);
         dataBuffer.set(dataIndex, packetParser.getData());
 
-        System.out.println(" ## saved to buffer: " + new String(packetParser.getData()) + " AckNum: " + packetParser.getSequenceNumber());
+        System.out.println(" ## saved to buffer, AckNum: " + packetParser.getSequenceNumber());
         setRwnd(isReceived);
 
         if (packetParser.getSequenceNumber() == this.expectedSeqNumber) {
@@ -600,9 +603,7 @@ public class TCPSocketImpl extends TCPSocket {
 
     @Override
     public void close() throws Exception {
-        // throw new RuntimeException("Not implemented!");
         this.socket.close();
-        this.saveCongestionWindowPlot();
     }
 
     @Override

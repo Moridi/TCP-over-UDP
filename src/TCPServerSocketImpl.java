@@ -131,6 +131,6 @@ public class TCPServerSocketImpl extends TCPServerSocket {
 
     @Override
     public void close() throws Exception {
-        throw new RuntimeException("Not implemented!");
+        this.socket.close();
     }
 }
