@@ -3,9 +3,9 @@ import java.io.IOException;
 import java.util.Date;
 
 public interface CongestionWindowPlotter {
-    long getSSThreshold();
+    float getSSThreshold();
 
-    long getWindowSize();
+    float getWindowSize();
 
     default void onWindowChange() {
         long systemTimeInMillis = System.currentTimeMillis();
