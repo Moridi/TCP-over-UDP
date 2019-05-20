@@ -1,2 +1,3 @@
 rm -rf *.class
-rm -rf ../src/temp2.txt
+rm -rf ../src/pat.mp3
+rm -rf *.png
